@@ -1,86 +1,31 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SYSTEM_PROMPT = `You are an expert residential real estate negotiation strategist helping a listing agent craft counteroffers.
-
-You will receive the incoming offer details, package strength indicators, seller priorities, and negotiation leverage suggestions.
-
-Your job: generate 3 distinct counteroffer strategy options:
-
-1. **Maximize Price** — Push harder on economics. Tighter terms, higher counter price, stronger deposit. This is for sellers who want every dollar.
-2. **Maximize Certainty** — Reduce closing risk. Protect against deal fallout. Appraisal coverage, stronger documentation, reasonable pricing. This is for sellers who can't afford a failed escrow.
-3. **Best Balance** — The most likely path to agreement. Strategic price increase paired with reasonable terms. This is what a smart listing agent would recommend to most sellers.
-
-Instructions:
-- Make each strategy MEANINGFULLY different — not just price variations
-- Write rationale like a strong listing agent explaining to their seller in plain English
-- Be strategic, practical, and concise
-- Do NOT present output as legal advice or draft legal forms
-- Do NOT overstate certainty
-- Consider the specific buyer's profile, financing, and behavior signals
-
-Return ONLY valid JSON (no markdown fences):
-
-{
-  "strategies": [
-    {
-      "strategy_type": "maximize_price" | "maximize_certainty" | "best_balance",
-      "title": "short title",
-      "subtitle": "one-line thesis",
-      "target_buyer": "buyer name this counter targets",
-      "counter_price": number,
-      "estimated_net_proceeds": "formatted string",
-      "acceptance_likelihood": number (0-100),
-      "closing_timeline_strategy": "what you're doing with the close date and why",
-      "contingency_changes": [
-        { "term": "name", "change": "what you're changing", "rationale": "why" }
-      ],
-      "leaseback_terms": "what leaseback you're offering or requesting and why",
-      "deposit_strategy": "earnest money amount and reasoning",
-      "supporting_document_requests": ["specific docs you want from the buyer"],
-      "rationale": "2-4 sentences — why this strategy works for this buyer, written like a listing agent",
-      "risk": "1-2 sentences on what could go wrong",
-      "acceptance_likelihood_description": "1-2 sentences on why you rate the likelihood where you do"
-    }
-  ]
-}`;
-
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const { offers, property, sellerPriorities, leverageSuggestions } = await req.json();
-
-    if (!offers || !Array.isArray(offers)) {
-      return new Response(
-        JSON.stringify({ error: "offers array is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+
+    const { offers, property } = await req.json();
+    if (!offers || !Array.isArray(offers)) {
+      return new Response(JSON.stringify({ error: "Missing offers array" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    const userPrompt = `Property: ${property?.address || "Unknown"}, Listed at ${property?.listingPrice || "N/A"}
+    const systemPrompt = `You are an elite real estate counter-offer strategist. Generate three distinct counter-offer strategies: one to maximize price, one to maximize certainty, and one for the best balance. Each targets a specific offer. Be specific with counter prices, terms, timelines. Reference actual offer data. Write rationale like a top luxury listing agent.`;
 
-Seller priorities: ${sellerPriorities ? JSON.stringify(sellerPriorities) : "Not specified"}
+    const userPrompt = `Generate 3 counter-offer strategies for ${property?.address || "the property"} (listed at $${property?.listingPrice?.toLocaleString() || "N/A"}).
 
-Leverage suggestions context: ${leverageSuggestions ? JSON.stringify(leverageSuggestions) : "None provided"}
-
-Here are the ${offers.length} offers to generate counter-strategies for:
-
+Offers:
 ${JSON.stringify(offers, null, 2)}
 
-Generate 3 distinct counteroffer strategies (Maximize Price, Maximize Certainty, Best Balance). Each should target the most appropriate buyer for that strategy. Return the structured JSON.`;
+Use the generate_counter_strategies tool.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -91,57 +36,83 @@ Generate 3 distinct counteroffer strategies (Maximize Price, Maximize Certainty,
       body: JSON.stringify({
         model: "google/gemini-3-flash-preview",
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.35,
+        tools: [{
+          type: "function",
+          function: {
+            name: "generate_counter_strategies",
+            description: "Return 3 counter-offer strategies",
+            parameters: {
+              type: "object",
+              properties: {
+                strategies: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      strategy_type: { type: "string", enum: ["maximize_price", "maximize_certainty", "best_balance"] },
+                      title: { type: "string" },
+                      subtitle: { type: "string" },
+                      target_buyer: { type: "string" },
+                      counter_price: { type: "number" },
+                      acceptance_likelihood: { type: "number" },
+                      estimated_net_proceeds: { type: "string" },
+                      closing_timeline_strategy: { type: "string" },
+                      deposit_strategy: { type: "string" },
+                      leaseback_terms: { type: "string" },
+                      contingency_changes: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            term: { type: "string" },
+                            change: { type: "string" },
+                            rationale: { type: "string" },
+                          },
+                          required: ["term", "change", "rationale"],
+                        },
+                      },
+                      supporting_document_requests: { type: "array", items: { type: "string" } },
+                      rationale: { type: "string" },
+                      risk: { type: "string" },
+                      acceptance_likelihood_description: { type: "string" },
+                    },
+                    required: ["strategy_type", "title", "subtitle", "target_buyer", "counter_price", "acceptance_likelihood", "rationale", "risk"],
+                  },
+                },
+              },
+              required: ["strategies"],
+            },
+          },
+        }],
+        tool_choice: { type: "function", function: { name: "generate_counter_strategies" } },
       }),
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again shortly." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Add funds in Settings." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const errText = await response.text();
-      console.error("AI gateway error:", response.status, errText);
-      return new Response(JSON.stringify({ error: "AI counter strategy generation failed" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      const status = response.status;
+      if (status === 429) return new Response(JSON.stringify({ error: "Rate limited, please try again later." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (status === 402) return new Response(JSON.stringify({ error: "Credits exhausted. Add funds in Settings > Workspace > Usage." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const t = await response.text();
+      console.error("AI gateway error:", status, t);
+      return new Response(JSON.stringify({ error: "AI analysis failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const aiResponse = await response.json();
-    const content = aiResponse.choices?.[0]?.message?.content || "";
+    const result = await response.json();
+    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
+    if (!toolCall) throw new Error("No tool call returned from AI");
 
-    let cleanJson = content.trim();
-    if (cleanJson.startsWith("```")) {
-      cleanJson = cleanJson.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-    }
+    const analysis = JSON.parse(toolCall.function.arguments);
 
-    let analysis;
-    try {
-      analysis = JSON.parse(cleanJson);
-    } catch {
-      console.error("Failed to parse AI response:", cleanJson.slice(0, 500));
-      return new Response(JSON.stringify({ error: "AI returned invalid JSON", raw: cleanJson.slice(0, 1000) }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    return new Response(JSON.stringify({ success: true, analysis }), {
-      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(JSON.stringify({ analysis }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (e) {
-    console.error("generate-counter error:", e);
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  } catch (err) {
+    console.error("generate-counter error:", err);
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
