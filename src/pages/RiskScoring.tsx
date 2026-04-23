@@ -21,12 +21,17 @@ const scoreLabels: { key: string; label: string; isRisk: boolean }[] = [
 
 const scoreColor = (v: number, isRisk: boolean) => {
   if (isRisk) return v <= 20 ? 'text-success' : v <= 40 ? 'text-warning' : 'text-destructive';
-  return v >= 85 ? 'text-success' : v >= 70 ? 'text-warning' : 'text-destructive';
+  return v >= 85 ? 'text-success' : v >= 70 ? 'text-foreground' : 'text-warning';
 };
 
-const scoreBg = (v: number, isRisk: boolean) => {
-  if (isRisk) return v <= 20 ? 'bg-success/5 border-success/20' : v <= 40 ? 'bg-warning/5 border-warning/20' : 'bg-destructive/5 border-destructive/20';
-  return v >= 85 ? 'bg-success/5 border-success/20' : v >= 70 ? 'bg-warning/5 border-warning/20' : 'bg-destructive/5 border-destructive/20';
+const scoreAccent = (v: number, isRisk: boolean) => {
+  if (isRisk) return v <= 20 ? 'bg-success' : v <= 40 ? 'bg-warning' : 'bg-destructive';
+  return v >= 85 ? 'bg-success' : v >= 70 ? 'bg-accent' : 'bg-warning';
+};
+
+const scoreLabelText = (v: number, isRisk: boolean) => {
+  if (isRisk) return v <= 20 ? 'Low' : v <= 40 ? 'Moderate' : 'Elevated';
+  return v >= 85 ? 'Strong' : v >= 70 ? 'Solid' : 'Watch';
 };
 
 const factorBarColor = (impact: number, isRisk: boolean) => {
