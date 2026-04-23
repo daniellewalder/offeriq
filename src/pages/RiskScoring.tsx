@@ -21,12 +21,17 @@ const scoreLabels: { key: string; label: string; isRisk: boolean }[] = [
 
 const scoreColor = (v: number, isRisk: boolean) => {
   if (isRisk) return v <= 20 ? 'text-success' : v <= 40 ? 'text-warning' : 'text-destructive';
-  return v >= 85 ? 'text-success' : v >= 70 ? 'text-warning' : 'text-destructive';
+  return v >= 85 ? 'text-success' : v >= 70 ? 'text-foreground' : 'text-warning';
 };
 
-const scoreBg = (v: number, isRisk: boolean) => {
-  if (isRisk) return v <= 20 ? 'bg-success/5 border-success/20' : v <= 40 ? 'bg-warning/5 border-warning/20' : 'bg-destructive/5 border-destructive/20';
-  return v >= 85 ? 'bg-success/5 border-success/20' : v >= 70 ? 'bg-warning/5 border-warning/20' : 'bg-destructive/5 border-destructive/20';
+const scoreAccent = (v: number, isRisk: boolean) => {
+  if (isRisk) return v <= 20 ? 'bg-success' : v <= 40 ? 'bg-warning' : 'bg-destructive';
+  return v >= 85 ? 'bg-success' : v >= 70 ? 'bg-accent' : 'bg-warning';
+};
+
+const scoreLabelText = (v: number, isRisk: boolean) => {
+  if (isRisk) return v <= 20 ? 'Low' : v <= 40 ? 'Moderate' : 'Elevated';
+  return v >= 85 ? 'Strong' : v >= 70 ? 'Solid' : 'Watch';
 };
 
 const factorBarColor = (impact: number, isRisk: boolean) => {
@@ -121,31 +126,31 @@ export default function RiskScoring() {
 
   return (
     <AppLayout>
-      <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
-        <div className="mb-2 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 pb-6 border-b border-border/70">
           <div>
-            <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Risk Analysis</p>
-            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Quality & Risk Scoring</h1>
-            <p className="text-[13px] text-muted-foreground font-body mt-2 max-w-2xl">
-              Rules-based scoring with transparent factor breakdowns. Click any score to see exactly what's driving it.
+            <p className="eyebrow mb-4">Risk Analysis</p>
+            <h1 className="text-display-lg text-foreground">Quality &amp; Risk Scoring</h1>
+            <p className="text-[13px] text-muted-foreground font-body mt-3 max-w-2xl leading-[1.7]">
+              Rules-based scoring with transparent factor breakdowns. Tap any score to see exactly what's driving it.
               {usingDemo && <span className="ml-2 text-accent">· Demo data</span>}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             {savedAt && !saving && (
-              <span className="flex items-center gap-1.5 text-[11px] text-success font-body">
+              <span className="flex items-center gap-1.5 text-[11px] text-success font-body tracking-wide">
                 <CheckCircle2 className="w-3.5 h-3.5" /> Saved {savedAt}
               </span>
             )}
             <button
               onClick={handleSaveScores}
               disabled={saving || loading}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-sm bg-foreground text-background text-[12px] font-body font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              className="btn-primary disabled:opacity-50"
             >
               {saving ? (
                 <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
               ) : (
-                <><Database className="w-3.5 h-3.5" /> Save scores to database</>
+                <><Database className="w-3.5 h-3.5" /> Save to database</>
               )}
             </button>
           </div>
@@ -158,54 +163,62 @@ export default function RiskScoring() {
         )}
 
         {scoredOffers.map(({ offer, scores }) => (
-          <div key={offer.id} className="card-elevated p-6 lg:p-8 space-y-6">
-            <div className="flex items-center justify-between">
+          <div key={offer.id} className="card-elevated p-7 lg:p-9 space-y-7">
+            <div className="flex items-end justify-between gap-4 flex-wrap pb-5 border-b border-border/60">
               <div>
-                <h3 className="heading-display text-xl">{offer.buyerName}</h3>
-                <p className="text-[11px] text-muted-foreground font-body mt-1 tracking-wide">
-                  {offer.agentName} · {offer.agentBrokerage} · {formatCurrency(offer.offerPrice)} · {offer.financingType}
+                <p className="eyebrow-plain mb-2">Buyer</p>
+                <h3 className="text-display-sm">{offer.buyerName}</h3>
+                <p className="text-[12px] text-muted-foreground font-body mt-2 tracking-wide tabular-nums">
+                  {offer.agentName} · {offer.agentBrokerage} · <span className="text-foreground font-medium">{formatCurrency(offer.offerPrice)}</span> · {offer.financingType}
                 </p>
               </div>
-              <div className="flex gap-1.5">
-                {offer.labels.map(l => <span key={l} className="badge-gold text-xs">{l}</span>)}
+              <div className="flex gap-1.5 flex-wrap">
+                {offer.labels.map(l => <span key={l} className="badge-gold">{l}</span>)}
               </div>
             </div>
 
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {scoreLabels.map((s) => {
                 const detail: ScoreDetail = scores[s.key as keyof typeof scores];
                 const isExpanded = expandedCards[offer.id] === s.key;
 
                 return (
-                  <div key={s.key} className={`rounded-md border transition-all duration-300 ${scoreBg(detail.score, s.isRisk)} ${isExpanded ? 'ring-1 ring-accent/20' : ''}`}>
-                    {/* Score header — clickable */}
-                    <button
-                      onClick={() => toggleCard(offer.id, s.key)}
-                      className="w-full text-left p-4"
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-medium text-muted-foreground font-body tracking-[0.1em] uppercase">{s.label}</span>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-lg font-light font-display ${scoreColor(detail.score, s.isRisk)}`}>
-                            {s.isRisk ? `${detail.score}%` : `${detail.score}/100`}
-                          </span>
-                          {isExpanded
-                            ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
-                            : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-                          }
+                  <div
+                    key={s.key}
+                    className={`rounded-lg border transition-all duration-300 bg-card ${
+                      isExpanded ? 'border-border-strong shadow-sm' : 'border-border/70 hover:border-border-strong'
+                    }`}
+                  >
+                    <button onClick={() => toggleCard(offer.id, s.key)} className="w-full text-left p-5">
+                      <div className="flex items-start justify-between mb-3 gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="label-key">{s.label}</p>
+                          <p className={`text-[10px] mt-1 font-body font-medium tracking-[0.16em] uppercase ${scoreColor(detail.score, s.isRisk)}`}>
+                            {scoreLabelText(detail.score, s.isRisk)}
+                          </p>
+                        </div>
+                        <div className="flex items-baseline gap-1">
+                          <span className="score-numeral text-foreground">{detail.score}</span>
+                          <span className="text-[10px] text-muted-foreground font-body tabular-nums">/100</span>
                         </div>
                       </div>
-                      {/* Score bar */}
-                      <div className="h-1 bg-muted rounded-full overflow-hidden mb-2">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${s.isRisk
-                            ? (detail.score <= 20 ? 'bg-success' : detail.score <= 40 ? 'bg-warning' : 'bg-destructive')
-                            : (detail.score >= 85 ? 'bg-success' : detail.score >= 70 ? 'bg-warning' : 'bg-destructive')
-                          }`}
-                          style={{ width: `${s.isRisk ? detail.score : detail.score}%` }}
+                      <div className="score-bar mb-3">
+                        <span
+                          className={scoreAccent(detail.score, s.isRisk)}
+                          style={{ width: `${detail.score}%` }}
                         />
                       </div>
-                      <p className="text-[11px] text-muted-foreground font-body leading-relaxed">{detail.summary}</p>
+                      <p className="text-[12px] text-muted-foreground font-body leading-[1.6]">{detail.summary}</p>
+                      <div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between text-[10px] text-muted-foreground/80 font-body tracking-[0.16em] uppercase">
+                        <span>{detail.factors.length} factor{detail.factors.length === 1 ? '' : 's'}</span>
+                        <span className="flex items-center gap-1">
+                          {isExpanded ? 'Hide' : 'Reveal'}
+                          {isExpanded
+                            ? <ChevronUp className="w-3 h-3" />
+                            : <ChevronDown className="w-3 h-3" />
+                          }
+                        </span>
+                      </div>
                     </button>
 
                     {/* Expanded factor breakdown */}
