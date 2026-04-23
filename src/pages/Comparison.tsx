@@ -104,13 +104,33 @@ export default function Comparison() {
     }
   }), [sortBy, offers]);
 
-  /* Compute bests for highlighting */
-  const maxPrice = bestVal(offers, o => o.offerPrice, 'max');
-  const minClose = bestVal(offers, o => o.closeDays, 'min');
-  const maxFinancial = bestVal(offers, o => o.scores.financialConfidence, 'max');
-  const minContingencies = bestVal(offers, o => o.contingencies.length, 'min');
-  const maxStrength = bestVal(offers, o => o.scores.offerStrength, 'max');
-  const maxCloseProb = bestVal(offers, o => o.scores.closeProbability, 'max');
+  const hasOffers = offers.length > 0;
+
+  /* Early empty-state path — short-circuit before any reduce on empty arrays */
+  if (!loading && !hasOffers) {
+    return (
+      <AppLayout>
+        <div className="max-w-5xl mx-auto py-12 animate-fade-in">
+          <div className="mb-8">
+            <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Comparison</p>
+            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">No offers to compare</h1>
+          </div>
+          <EmptyDealState
+            title="No offers in your latest analysis"
+            message="Comparison comes alive once you've uploaded offer packages. Start a new analysis or add offers to see a side-by-side breakdown across price, certainty, contingencies, timing, and completeness."
+          />
+        </div>
+      </AppLayout>
+    );
+  }
+
+  /* Compute bests for highlighting (safe — offers is non-empty here) */
+  const maxPrice = hasOffers ? bestVal(offers, o => o.offerPrice, 'max') : 0;
+  const minClose = hasOffers ? bestVal(offers, o => o.closeDays, 'min') : 0;
+  const maxFinancial = hasOffers ? bestVal(offers, o => o.scores.financialConfidence, 'max') : 0;
+  const minContingencies = hasOffers ? bestVal(offers, o => o.contingencies.length, 'min') : 0;
+  const maxStrength = hasOffers ? bestVal(offers, o => o.scores.offerStrength, 'max') : 0;
+  const maxCloseProb = hasOffers ? bestVal(offers, o => o.scores.closeProbability, 'max') : 0;
 
   /* Spotlight offers — Highest, Safest, Cleanest, Fastest, Best Balance */
   const highest = offers.reduce((a, b) => a.offerPrice > b.offerPrice ? a : b);
@@ -120,16 +140,13 @@ export default function Comparison() {
   const bestBalance = offers.reduce((a, b) => a.scores.offerStrength > b.scores.offerStrength ? a : b);
 
   // Per-offer dynamic badge map for inline pills
-  const badgeMap = useMemo(() => {
-    const m: Record<string, string[]> = {};
-    const push = (id: string, label: string) => { (m[id] ||= []).push(label); };
-    push(highest.id, 'Highest');
-    push(safest.id, 'Safest');
-    push(cleanest.id, 'Cleanest');
-    push(fastest.id, 'Fastest');
-    push(bestBalance.id, 'Best Balance');
-    return m;
-  }, [highest, safest, cleanest, fastest, bestBalance]);
+  const badgeMap: Record<string, string[]> = {};
+  const pushBadge = (id: string, label: string) => { (badgeMap[id] ||= []).push(label); };
+  pushBadge(highest.id, 'Highest');
+  pushBadge(safest.id, 'Safest');
+  pushBadge(cleanest.id, 'Cleanest');
+  pushBadge(fastest.id, 'Fastest');
+  pushBadge(bestBalance.id, 'Best Balance');
 
   const spotlights = [
     { label: 'Highest Price', icon: Crown, offer: highest, value: formatCurrency(highest.offerPrice), sub: priceDelta(highest) >= 0 ? `+${formatCurrency(priceDelta(highest))} vs. list` : `${formatCurrency(priceDelta(highest))} vs. list`, accent: 'border-accent/50 bg-accent/[0.03]' },
@@ -151,7 +168,6 @@ export default function Comparison() {
             <h1 className="heading-display text-3xl lg:text-4xl text-foreground">{property.address}</h1>
             <p className="text-[13px] text-muted-foreground font-body mt-2">
               {offers.length} offers · Listed at {formatCurrency(property.listingPrice)}
-              {usingDemo && <span className="ml-2 text-accent">· Demo data</span>}
             </p>
           </div>
           <div className="flex items-center gap-2">
