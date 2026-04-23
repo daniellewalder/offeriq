@@ -16,6 +16,9 @@ import CounterStrategy from "./pages/CounterStrategy.tsx";
 import DeltaView from "./pages/DeltaView.tsx";
 import BuyerReadiness from "./pages/BuyerReadiness.tsx";
 import Report from "./pages/Report.tsx";
+import SellerPortal from "./pages/SellerPortal.tsx";
+import SellerPresent from "./pages/SellerPresent.tsx";
+import SellerReportPDF from "./pages/SellerReportPDF.tsx";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +41,9 @@ const App = () => (
           <Route path="/delta-view" element={<DeltaView />} />
           <Route path="/buyer-readiness" element={<BuyerReadiness />} />
           <Route path="/report" element={<Report />} />
+          <Route path="/portal/:token" element={<SellerPortal />} />
+          <Route path="/portal/:token/present" element={<SellerPresent />} />
+          <Route path="/seller-report/:token" element={<SellerReportPDF />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

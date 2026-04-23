@@ -40,6 +40,7 @@ import {
   type RecommendationReport,
   type RiskCallout,
 } from "@/lib/recommendationEngine";
+import SharePortalCard from "@/components/SharePortalCard";
 
 function hydrateScoredOffer(row: any): ScoredOffer {
   const f = row.factor_details ?? {};
@@ -232,6 +233,9 @@ export default function Report() {
 
         {!loading && report && (
           <>
+            {/* Share with seller */}
+            <SharePortalCard propertyAddress={propertyAddress} />
+
             {/* Hero recommendation */}
             <div className="card-feature p-8 lg:p-12 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-gold opacity-[0.04] rounded-full blur-3xl" />
