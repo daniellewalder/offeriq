@@ -6,6 +6,13 @@ import {
 } from 'lucide-react';
 import { useState, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import {
+  getOrCreateDemoAnalysis,
+  createOffer,
+  uploadDocument,
+  triggerExtraction,
+} from '@/lib/offerService';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -30,6 +37,7 @@ interface UploadedDoc {
   category: DocCategory;
   status: 'uploading' | 'extracting' | 'complete' | 'error';
   progress: number;
+  dbDocId?: string;
 }
 
 interface ExtractionField {
@@ -48,6 +56,8 @@ interface OfferPackage {
   documents: UploadedDoc[];
   extraction: ExtractionResult | null;
   status: 'uploading' | 'extracting' | 'complete' | 'idle';
+  dbOfferId?: string;
+  dbExtractionResult?: any;
 }
 
 // --------------- mock extraction ---------------
@@ -176,6 +186,24 @@ export default function OfferIntake() {
     setActivePackageId(pkg.id);
     setNewOfferName('');
     setShowNewUpload(false);
+
+    // Create offer in DB in background
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          toast({ title: 'Not signed in', description: 'Sign in to save offers to your account. Data will be stored locally for now.', variant: 'destructive' });
+          return;
+        }
+        const dealId = await getOrCreateDemoAnalysis(user.id);
+        const offerId = await createOffer(user.id, dealId, pkg.name);
+        setPackages(prev => prev.map(p =>
+          p.id === pkg.id ? { ...p, dbOfferId: offerId } : p
+        ));
+      } catch (e: any) {
+        console.error('Failed to create offer in DB:', e);
+      }
+    })();
   };
 
   const handleFiles = useCallback((files: FileList | null) => {
@@ -192,41 +220,109 @@ export default function OfferIntake() {
       p.id === activePackageId ? { ...p, documents: [...p.documents, ...newDocs] } : p
     ));
 
-    // Simulate upload progress
+    // Upload files — try real backend first, fall back to simulation
     newDocs.forEach(doc => {
-      let prog = 0;
-      const iv = setInterval(() => {
-        prog += 15 + Math.random() * 20;
-        if (prog >= 100) {
-          prog = 100;
-          clearInterval(iv);
-          setPackages(prev => prev.map(p =>
-            p.id === activePackageId
-              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'complete', progress: 100 } : d) }
-              : p
-          ));
-        } else {
-          setPackages(prev => prev.map(p =>
-            p.id === activePackageId
-              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, progress: Math.round(prog) } : d) }
-              : p
-          ));
-        }
-      }, 300);
-    });
-  }, [activePackageId, selectedCategory]);
+      const currentPkgId = activePackageId;
+      const pkg = packages.find(p => p.id === currentPkgId);
 
+      (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user && pkg?.dbOfferId) {
+            // Real upload
+            setPackages(prev => prev.map(p =>
+              p.id === currentPkgId
+                ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, progress: 30 } : d) }
+                : p
+            ));
+
+            const { documentId } = await uploadDocument(user.id, pkg.dbOfferId, doc.file, doc.category);
+
+            setPackages(prev => prev.map(p =>
+              p.id === currentPkgId
+                ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'complete', progress: 100, dbDocId: documentId } : d) }
+                : p
+            ));
+            return;
+          }
+        } catch (e) {
+          console.error('Real upload failed, falling back to simulation:', e);
+        }
+
+        // Fallback: simulate upload progress
+        let prog = 0;
+        const iv = setInterval(() => {
+          prog += 15 + Math.random() * 20;
+          if (prog >= 100) {
+            prog = 100;
+            clearInterval(iv);
+            setPackages(prev => prev.map(p =>
+              p.id === currentPkgId
+                ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'complete', progress: 100 } : d) }
+                : p
+            ));
+          } else {
+            setPackages(prev => prev.map(p =>
+              p.id === currentPkgId
+                ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, progress: Math.round(prog) } : d) }
+                : p
+            ));
+          }
+        }, 300);
+      })();
+    });
+  }, [activePackageId, selectedCategory, packages]);
   const removeDoc = (pkgId: string, docId: string) => {
     setPackages(prev => prev.map(p =>
       p.id === pkgId ? { ...p, documents: p.documents.filter(d => d.id !== docId) } : p
     ));
   };
 
-  const runExtraction = (pkgId: string) => {
+  const runExtraction = async (pkgId: string) => {
+    const pkg = packages.find(p => p.id === pkgId);
+    if (!pkg) return;
+
     setPackages(prev => prev.map(p =>
       p.id === pkgId ? { ...p, status: 'extracting' } : p
     ));
-    // Simulate AI extraction with mock data
+
+    try {
+      // Try real backend extraction
+      if (pkg.dbOfferId) {
+        const docPayload = pkg.documents.map(d => ({
+          id: d.dbDocId || d.id,
+          name: d.file.name,
+          category: d.category,
+        }));
+
+        const result = await triggerExtraction(pkg.dbOfferId, pkg.name, docPayload);
+
+        // Convert result to ExtractionResult format for display
+        const extraction: ExtractionResult = {};
+        if (result.extraction) {
+          for (const field of result.extraction) {
+            extraction[field.field_name] = {
+              value: field.field_value,
+              confidence: field.confidence,
+              evidence: field.evidence,
+            };
+          }
+        }
+
+        setPackages(prev => prev.map(p =>
+          p.id === pkgId ? { ...p, status: 'complete', extraction, dbExtractionResult: result } : p
+        ));
+        toast({
+          title: 'Extraction complete',
+          description: `${result.fields_count} fields extracted (v${result.version}). Completeness: ${result.completeness}`,
+        });
+        return;
+      }
+    } catch (e: any) {
+      console.error('Real extraction failed, falling back to mock:', e);
+    }
+
+    // Fallback: simulate with mock data
     setTimeout(() => {
       setPackages(prev => prev.map(p =>
         p.id === pkgId ? { ...p, status: 'complete', extraction: MOCK_EXTRACTION } : p
