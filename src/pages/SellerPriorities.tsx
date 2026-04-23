@@ -210,12 +210,23 @@ export default function SellerPriorities() {
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
         {/* Header */}
-        <div>
-          <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Priorities</p>
-          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Seller Priority Mapping</h1>
-          <p className="text-[13px] text-muted-foreground font-body mt-2">
-            Adjust what matters most — the ranking updates instantly.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Priorities</p>
+            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Seller Priority Mapping</h1>
+            <p className="text-[13px] text-muted-foreground font-body mt-2">
+              Adjust what matters most — the ranking updates instantly.
+              {usingDemo && <span className="ml-2 text-accent">· Demo data</span>}
+            </p>
+          </div>
+          {!usingDemo && (
+            <div className="flex items-center gap-2 text-[11px] font-body">
+              {saveStatus === 'saving' && <><Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" /><span className="text-muted-foreground">Saving…</span></>}
+              {saveStatus === 'saved' && lastSavedAt && <><CheckCircle2 className="w-3.5 h-3.5 text-success" /><span className="text-success">Saved {lastSavedAt}</span></>}
+              {saveStatus === 'error' && <><AlertTriangle className="w-3.5 h-3.5 text-destructive" /><span className="text-destructive">Save failed</span></>}
+              {saveStatus === 'idle' && lastSavedAt && <><Save className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-muted-foreground">Last saved {lastSavedAt}</span></>}
+            </div>
+          )}
         </div>
 
         {/* ── Top Recommendation Banner ── */}
