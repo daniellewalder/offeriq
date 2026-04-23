@@ -220,10 +220,11 @@ export default function Report() {
           </button>
         </div>
 
-        {usingDemo && !loading && (
-          <div className="rounded-md border border-border/70 bg-surface-2 px-4 py-2.5 text-[12px] text-muted-foreground font-body tracking-wide">
-            Showing a demo report. Run an analysis with real offers to generate one from your own data.
-          </div>
+        {!loading && !report && (
+          <EmptyDealState
+            title="No analysis to summarize yet"
+            message="The recommendation report is composed from your offers, scores, leverage, and counter strategies. Once you've added offers to a deal, this page becomes a polished narrative summary you can share with your seller."
+          />
         )}
 
         {loading && (
