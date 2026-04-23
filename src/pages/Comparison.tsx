@@ -1,5 +1,6 @@
 import AppLayout from '@/components/AppLayout';
-import { sampleProperty, formatCurrency } from '@/data/sampleData';
+import { formatCurrency } from '@/data/sampleData';
+import EmptyDealState from '@/components/EmptyDealState';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle, Sparkles, Zap, MessageSquare, ArrowRight, Loader2, Zap as ZapIcon, Gauge, FileWarning } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -15,7 +16,8 @@ type SortKey =
   | 'contingencyRisk'
   | 'timingRisk'
   | 'completeness';
-type Offer = (typeof sampleProperty.offers)[0];
+import type { Offer as SampleOffer } from '@/data/sampleData';
+type Offer = SampleOffer;
 type OfferWithMeta = Offer & { missingItems?: string[]; notableRisks?: string[]; notableStrengths?: string[] };
 
 const sortOptions: { key: SortKey; label: string }[] = [
@@ -27,12 +29,7 @@ const sortOptions: { key: SortKey; label: string }[] = [
   { key: 'completeness', label: 'Completeness' },
 ];
 
-/* ── Helpers ── */
-const priceDelta = (o: Offer) => o.offerPrice - sampleProperty.listingPrice;
-const priceDeltaStr = (o: Offer) => {
-  const d = priceDelta(o);
-  return d >= 0 ? `+${formatCurrency(d)}` : formatCurrency(d);
-};
+/* ── Helpers (priceDelta is created inside the component scope so it can use real listing price) ── */
 
 function bestVal<T>(offers: Offer[], fn: (o: Offer) => T, compare: 'max' | 'min'): T {
   const vals = offers.map(fn);
@@ -47,15 +44,14 @@ const Bar = ({ pct, color }: { pct: number; color: string }) => (
 
 export default function Comparison() {
   const [sortBy, setSortBy] = useState<SortKey>('price');
-  const [offers, setOffers] = useState<OfferWithMeta[]>(sampleProperty.offers as OfferWithMeta[]);
+  const [offers, setOffers] = useState<OfferWithMeta[]>([]);
   const [property, setProperty] = useState({
-    address: sampleProperty.address,
-    listingPrice: sampleProperty.listingPrice,
-    sellerNotes: sampleProperty.sellerNotes,
-    sellerGoals: sampleProperty.sellerGoals,
+    address: '',
+    listingPrice: 0,
+    sellerNotes: '',
+    sellerGoals: [] as string[],
   });
   const [loading, setLoading] = useState(true);
-  const [usingDemo, setUsingDemo] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -69,21 +65,20 @@ export default function Comparison() {
         if (!analysis) { setLoading(false); return; }
         const rows = await fetchOffersWithExtraction(analysis.id);
         if (cancelled) return;
-        const listingPrice = Number(analysis.properties?.listing_price ?? sampleProperty.listingPrice);
+        const listingPrice = Number(analysis.properties?.listing_price ?? 0);
         if (rows.length === 0) { setLoading(false); return; }
         const adapted = rows.map(r => adaptOffer(r, listingPrice));
         setOffers(adapted);
         setProperty({
-          address: analysis.properties?.address ?? sampleProperty.address,
+          address: analysis.properties?.address ?? 'Property',
           listingPrice,
-          sellerNotes: analysis.properties?.seller_notes ?? sampleProperty.sellerNotes,
-          sellerGoals: analysis.properties?.seller_goals ?? sampleProperty.sellerGoals,
+          sellerNotes: analysis.properties?.seller_notes ?? '',
+          sellerGoals: analysis.properties?.seller_goals ?? [],
         });
-        setUsingDemo(false);
       } catch (e: any) {
         if (!cancelled) {
           setError(e.message ?? 'Failed to load offers');
-          toast({ title: 'Could not load live offers', description: 'Showing demo data instead.', variant: 'destructive' });
+          toast({ title: 'Could not load offers', description: e.message ?? 'Failed to load.', variant: 'destructive' });
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -91,6 +86,12 @@ export default function Comparison() {
     })();
     return () => { cancelled = true; };
   }, [toast]);
+
+  const priceDelta = (o: Offer) => o.offerPrice - property.listingPrice;
+  const priceDeltaStr = (o: Offer) => {
+    const d = priceDelta(o);
+    return d >= 0 ? `+${formatCurrency(d)}` : formatCurrency(d);
+  };
 
   const sorted = useMemo(() => [...offers].sort((a, b) => {
     switch (sortBy) {
