@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { sampleProperty, formatCurrency } from '@/data/sampleData';
-import { TrendingUp, Shield, Scale, RefreshCw, FileText, ArrowRight, Check, AlertTriangle } from 'lucide-react';
+import { TrendingUp, Shield, Scale, RefreshCw, FileText, ArrowRight, Check, AlertTriangle, Brain, Loader2, Sparkles } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 /* ── Types ── */
 interface Term {
@@ -128,6 +132,69 @@ export default function CounterStrategy() {
   const [selected, setSelected] = useState('best-balance');
   const active = strategies.find(s => s.id === selected)!;
   const targetOffer = sampleProperty.offers.find(o => o.id === active.targetOffer)!;
+  const [aiStrategies, setAiStrategies] = useState<any>(null);
+  const [aiSelected, setAiSelected] = useState<string>('best_balance');
+  const [aiLoading, setAiLoading] = useState(false);
+  const { toast } = useToast();
+
+  const runAiCounter = async () => {
+    setAiLoading(true);
+    try {
+      const offersPayload = sampleProperty.offers.map(o => ({
+        buyer: o.buyerName,
+        agent: o.agentName,
+        price: o.offerPrice,
+        financing: o.financingType,
+        down_payment_pct: o.downPaymentPercent,
+        earnest_money: o.earnestMoney,
+        contingencies: o.contingencies,
+        inspection_period: o.inspectionPeriod,
+        appraisal_terms: o.appraisalTerms,
+        close_days: o.closeDays,
+        close_timeline: o.closeTimeline,
+        leaseback: o.leasebackRequest,
+        concessions: o.concessions,
+        proof_of_funds: o.proofOfFunds,
+        pre_approval: o.preApproval,
+        completeness: o.completeness,
+        close_probability: o.scores.closeProbability,
+        financial_confidence: o.scores.financialConfidence,
+        contingency_risk: o.scores.contingencyRisk,
+        special_notes: o.specialNotes,
+      }));
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-counter`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(SUPABASE_KEY ? { Authorization: `Bearer ${SUPABASE_KEY}` } : {}),
+        },
+        body: JSON.stringify({
+          offers: offersPayload,
+          property: { address: sampleProperty.address, listingPrice: sampleProperty.listingPrice },
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || data?.error) {
+        toast({ title: 'AI Generation Error', description: data?.error || 'Request failed', variant: 'destructive' });
+      } else if (data?.analysis?.strategies) {
+        setAiStrategies(data.analysis.strategies);
+        setAiSelected('best_balance');
+      }
+    } catch (e: any) {
+      toast({ title: 'AI Generation Failed', description: e.message || 'Something went wrong', variant: 'destructive' });
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const aiActive = aiStrategies?.find((s: any) => s.strategy_type === aiSelected);
+  const aiStrategyMeta: Record<string, { icon: typeof TrendingUp; accent: string; iconBg: string }> = {
+    maximize_price: { icon: TrendingUp, accent: 'border-accent/50', iconBg: 'bg-accent/10 text-accent' },
+    maximize_certainty: { icon: Shield, accent: 'border-success/40', iconBg: 'bg-success/10 text-success' },
+    best_balance: { icon: Scale, accent: 'border-info/40', iconBg: 'bg-info/10 text-info' },
+  };
 
   return (
     <AppLayout>
@@ -242,6 +309,171 @@ export default function CounterStrategy() {
               <RefreshCw className="w-3.5 h-3.5" /> Revise Terms
             </button>
           </div>
+        </div>
+
+        {/* ── AI Counter Strategy Generator ── */}
+        <div className="rounded-md border border-border/60 bg-card">
+          <div className="p-5 border-b border-border/40 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-sm bg-accent/10 flex items-center justify-center">
+                <Brain className="w-4 h-4 text-accent" strokeWidth={1.5} />
+              </div>
+              <div>
+                <p className="text-[13px] font-body font-medium text-foreground">AI Counter Strategy Generator</p>
+                <p className="text-[11px] text-muted-foreground font-body">Generates 3 tailored counteroffer strategies from offer data</p>
+              </div>
+            </div>
+            <button
+              onClick={runAiCounter}
+              disabled={aiLoading}
+              className="flex items-center gap-2 px-4 py-2 rounded-md bg-accent text-accent-foreground text-[12px] font-body font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+            >
+              {aiLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              {aiLoading ? 'Generating…' : aiStrategies ? 'Regenerate' : 'Generate AI Strategies'}
+            </button>
+          </div>
+
+          {aiStrategies && (
+            <div className="p-5 space-y-5">
+              {/* AI Strategy Selector */}
+              <div className="grid sm:grid-cols-3 gap-3">
+                {aiStrategies.map((s: any) => {
+                  const meta = aiStrategyMeta[s.strategy_type] || aiStrategyMeta.best_balance;
+                  const Icon = meta.icon;
+                  const isActive = aiSelected === s.strategy_type;
+                  return (
+                    <button
+                      key={s.strategy_type}
+                      onClick={() => setAiSelected(s.strategy_type)}
+                      className={`text-left rounded-md border p-4 transition-all duration-300 ${isActive ? `${meta.accent} bg-card shadow-sm` : 'border-border/40 bg-card hover:border-border'}`}
+                    >
+                      <div className="flex items-center gap-2.5 mb-2">
+                        <div className={`w-7 h-7 rounded-sm flex items-center justify-center ${meta.iconBg}`}>
+                          <Icon className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        </div>
+                        <div>
+                          <h3 className="text-[12px] font-medium font-body text-foreground">{s.title}</h3>
+                          {s.strategy_type === 'best_balance' && <span className="badge-gold text-[9px]">AI Pick</span>}
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground font-body leading-relaxed mb-2">{s.subtitle}</p>
+                      <div className="flex items-baseline gap-2">
+                        <span className="heading-display text-xl text-foreground">{typeof s.counter_price === 'number' ? formatCurrency(s.counter_price) : s.counter_price}</span>
+                        <span className={`text-[10px] font-body font-medium ${likelihoodColor(s.acceptance_likelihood)}`}>{s.acceptance_likelihood}%</span>
+                      </div>
+                      <div className="h-1 bg-muted rounded-full overflow-hidden mt-1.5">
+                        <div className={`h-full rounded-full transition-all duration-500 ${isActive ? likelihoodBar(s.acceptance_likelihood) : 'bg-muted-foreground/20'}`} style={{ width: `${s.acceptance_likelihood}%` }} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* AI Active Strategy Detail */}
+              {aiActive && (() => {
+                const meta = aiStrategyMeta[aiActive.strategy_type] || aiStrategyMeta.best_balance;
+                return (
+                  <div className={`rounded-md border ${meta.accent} bg-card`}>
+                    {/* Header */}
+                    <div className="px-5 py-4 border-b border-border/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-1">AI Counter — Targeting</p>
+                        <p className="text-[15px] font-medium font-body text-foreground">{aiActive.target_buyer}</p>
+                      </div>
+                      <div className="flex items-center gap-5">
+                        <div className="text-right">
+                          <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body">Acceptance</p>
+                          <p className={`text-xl font-display ${likelihoodColor(aiActive.acceptance_likelihood)}`}>{aiActive.acceptance_likelihood}%</p>
+                        </div>
+                        {aiActive.estimated_net_proceeds && (
+                          <div className="text-right">
+                            <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body">Est. Net</p>
+                            <p className="text-xl font-display text-foreground">{aiActive.estimated_net_proceeds}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Key Terms */}
+                    <div className="px-5 py-4 border-b border-border/40">
+                      <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-3">Counter Terms</p>
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+                        <div>
+                          <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium mb-0.5">Counter Price</p>
+                          <p className="text-[14px] font-body text-foreground font-medium">{typeof aiActive.counter_price === 'number' ? formatCurrency(aiActive.counter_price) : aiActive.counter_price}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium mb-0.5">Close Timeline</p>
+                          <p className="text-[13px] font-body text-foreground">{aiActive.closing_timeline_strategy}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium mb-0.5">Earnest Money</p>
+                          <p className="text-[13px] font-body text-foreground">{aiActive.deposit_strategy}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium mb-0.5">Leaseback</p>
+                          <p className="text-[13px] font-body text-foreground">{aiActive.leaseback_terms}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Contingency Changes */}
+                    {aiActive.contingency_changes?.length > 0 && (
+                      <div className="px-5 py-4 border-b border-border/40">
+                        <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-3">Contingency Changes</p>
+                        <div className="space-y-2">
+                          {aiActive.contingency_changes.map((c: any, i: number) => (
+                            <div key={i} className="flex items-start gap-2">
+                              <Check className="w-3.5 h-3.5 text-success flex-shrink-0 mt-0.5" strokeWidth={2} />
+                              <div>
+                                <p className="text-[12px] font-body font-medium text-foreground">{c.term}: {c.change}</p>
+                                <p className="text-[11px] text-muted-foreground font-body">{c.rationale}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Document Requests */}
+                    {aiActive.supporting_document_requests?.length > 0 && (
+                      <div className="px-5 py-4 border-b border-border/40">
+                        <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-2">Document Requests</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {aiActive.supporting_document_requests.map((d: string, i: number) => (
+                            <span key={i} className="badge-info">{d}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Rationale */}
+                    <div className="px-5 py-4 border-b border-border/40">
+                      <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-2">Why This Works</p>
+                      <p className="text-[13px] text-muted-foreground font-body leading-[1.7]">{aiActive.rationale}</p>
+                    </div>
+
+                    {/* Risk + Acceptance */}
+                    <div className="px-5 py-4 grid sm:grid-cols-2 gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle className="w-3.5 h-3.5 text-warning" strokeWidth={1.5} />
+                          <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium">Risk</p>
+                        </div>
+                        <p className="text-[12px] text-muted-foreground font-body leading-relaxed">{aiActive.risk}</p>
+                      </div>
+                      {aiActive.acceptance_likelihood_description && (
+                        <div>
+                          <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-2">Acceptance Assessment</p>
+                          <p className="text-[12px] text-muted-foreground font-body leading-relaxed">{aiActive.acceptance_likelihood_description}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
       </div>
     </AppLayout>
