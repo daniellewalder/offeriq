@@ -133,7 +133,7 @@ export default {
         },
       },
       fontFamily: {
-        display: ["'Playfair Display'", "Georgia", "serif"],
+        display: ["'Cormorant Garamond'", "Georgia", "serif"],
         body: ["'Inter'", "system-ui", "sans-serif"],
       },
     },
