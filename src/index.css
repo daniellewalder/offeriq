@@ -372,3 +372,48 @@
   body { background: white; }
   .card-elevated, .card-paper, .card-feature { box-shadow: none; border-color: hsl(var(--border-strong)); }
 }
+
+/* ── Seller PDF document ────────────────────────────────────────── */
+.pdf-doc { background: hsl(var(--background)); }
+.pdf-page {
+  max-width: 880px;
+  margin: 0 auto;
+  background: hsl(var(--card));
+  min-height: 100vh;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+}
+@media screen {
+  .pdf-doc { padding: 24px 0; }
+  .pdf-page {
+    margin-bottom: 24px;
+    border-radius: 8px;
+    box-shadow: var(--shadow-md);
+    border: 1px solid hsl(var(--border) / 0.7);
+  }
+}
+@media print {
+  @page { size: Letter; margin: 0; }
+  html, body { background: white !important; }
+  .pdf-doc { padding: 0 !important; }
+  .pdf-page {
+    page-break-after: always;
+    break-after: page;
+    box-shadow: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+    min-height: 100vh;
+  }
+  .pdf-page:last-child { page-break-after: auto; }
+}
+
+/* Editorial helper used in slides + PDF */
+.tracking-editorial { letter-spacing: -0.025em; }
+
+/* Drawer slide */
+@keyframes slide-in-right {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.animate-slide-in-right { animation: slide-in-right 240ms var(--ease-luxe); }
