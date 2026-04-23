@@ -1,468 +1,550 @@
-import AppLayout from '@/components/AppLayout';
-import { ArrowRight, Home, Clock, DollarSign, ShieldCheck, FileX, Wrench, BadgeCheck, TrendingDown, ChevronDown, ChevronUp, Brain, Loader2, RefreshCw, Sparkles, Zap, Target } from 'lucide-react';
-import { useState } from 'react';
-import { sampleProperty, formatCurrency } from '@/data/sampleData';
-import { useToast } from '@/hooks/use-toast';
+import AppLayout from "@/components/AppLayout";
+import {
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Save,
+  CheckCircle2,
+  Sparkles,
+  Zap,
+  Target,
+  Home as HomeIcon,
+  Clock,
+  DollarSign,
+  ShieldCheck,
+  TrendingDown,
+  Wrench,
+  BadgeCheck,
+  FileCheck,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { sampleProperty, formatCurrency } from "@/data/sampleData";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  fetchLatestAnalysisForUser,
+  fetchOffersWithExtraction,
+  fetchLatestLeverageSuggestions,
+  saveLeverageSuggestions,
+} from "@/lib/offerService";
+import { adaptOffer } from "@/lib/offerAdapter";
+import {
+  generateLeverage,
+  type LeverageSuggestion,
+  type LeverageCategory,
+  type LeverageTag,
+} from "@/lib/leverageEngine";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+/* ── Visuals ── */
+const categoryIcons: Record<LeverageCategory, typeof HomeIcon> = {
+  leaseback: HomeIcon,
+  timing: Clock,
+  deposit: DollarSign,
+  contingency: ShieldCheck,
+  appraisal: TrendingDown,
+  repair: Wrench,
+  concession: BadgeCheck,
+  financing: FileCheck,
+};
+const categoryLabels: Record<LeverageCategory, string> = {
+  leaseback: "Leaseback",
+  timing: "Timing",
+  deposit: "Deposit",
+  contingency: "Contingency",
+  appraisal: "Appraisal",
+  repair: "Repairs",
+  concession: "Concessions",
+  financing: "Financing",
+};
 
-/* ── Types ── */
-type Impact = 'critical' | 'high' | 'moderate';
-type Friction = 'none' | 'low' | 'moderate';
-type Category = 'leaseback' | 'timing' | 'deposit' | 'contingency' | 'appraisal' | 'repair' | 'concession';
+const tagStyles: Record<LeverageTag, string> = {
+  "High Seller Impact": "badge-gold",
+  "Low Buyer Friction": "badge-success",
+  "Strong Counter Candidate": "badge-warning",
+  "Likely Acceptance Booster": "badge-info",
+};
 
-interface LeveragePoint {
-  category: Category;
-  title: string;
-  oneLiner: string;
-  reasoning: string;
-  sellerImpact: Impact;
-  buyerFriction: Friction;
-  tags: string[];
-  applicableTo: string[];
-  sellerGets: string;
-  buyerGives: string;
+const meterColor = (score: number, inverse = false) => {
+  const s = inverse ? 100 - score : score;
+  if (s >= 70) return "bg-success";
+  if (s >= 40) return "bg-info";
+  return "bg-muted-foreground/40";
+};
+
+interface OfferGroup {
+  offerId: string;
+  buyerName: string;
+  offerPrice: number;
+  suggestions: LeverageSuggestion[];
 }
 
-/* ── Data ── */
-const leveragePoints: LeveragePoint[] = [
-  {
-    category: 'leaseback',
-    title: 'Trade a rent-free leaseback for a firmer price',
-    oneLiner: 'Offer 7–14 days of post-close occupancy — it costs the buyer almost nothing but gives you real pricing leverage.',
-    reasoning: 'In luxury deals, a short rent-free leaseback is one of the most lopsided trades available. The buyer absorbs a rounding error on carrying costs, but the seller gains the flexibility to hold firm on price, reduce concessions, or both. It\'s a concession that feels generous to the buyer and costs you nothing materially.',
-    sellerImpact: 'critical',
-    buyerFriction: 'none',
-    tags: ['Pricing Leverage', 'Easy Win', 'Proven Tactic'],
-    applicableTo: ['offer-b', 'offer-e'],
-    sellerGets: 'Stronger negotiating position on price and concessions',
-    buyerGives: '7–14 days of post-close occupancy (minimal cost)',
-  },
-  {
-    category: 'contingency',
-    title: 'Tighten the inspection window to 5–7 days',
-    oneLiner: 'Serious buyers on well-maintained properties don\'t need 17 days to decide. Shorter windows mean less renegotiation risk.',
-    reasoning: 'A 17-day inspection period on a well-maintained Bel Air property is leaving the door wide open for renegotiation. At this level, buyers know what they\'re getting into — a 5–7 day window is standard for luxury transactions. It signals you expect commitment and shrinks the period where minor findings get weaponized into price reductions. Buyers who push back hard on this are often planning to renegotiate regardless.',
-    sellerImpact: 'critical',
-    buyerFriction: 'low',
-    tags: ['Risk Reduction', 'Signals Strength', 'Counter Essential'],
-    applicableTo: ['offer-b', 'offer-d', 'offer-e'],
-    sellerGets: 'Dramatically reduced renegotiation exposure',
-    buyerGives: 'Faster inspection decision (5–7 days vs. 10–17)',
-  },
-  {
-    category: 'deposit',
-    title: 'Push earnest money to $250K–$300K',
-    oneLiner: 'A bigger deposit costs qualified buyers nothing — it sits in escrow — but it makes walking away genuinely expensive.',
-    reasoning: 'At the $9M price point, a $150K earnest money deposit is barely 1.6% of the purchase price. That doesn\'t create meaningful friction if the buyer decides to walk. Pushing to $250K–$300K puts real money at stake and signals the buyer is fully committed. The key insight: this costs a well-qualified buyer exactly zero — the money comes back at close. It\'s a pure commitment signal, and serious buyers have no reason to refuse.',
-    sellerImpact: 'high',
-    buyerFriction: 'none',
-    tags: ['Commitment Test', 'Zero Buyer Cost', 'Easy Ask'],
-    applicableTo: ['offer-b', 'offer-d', 'offer-e'],
-    sellerGets: 'Stronger contractual commitment, costly buyer exit',
-    buyerGives: 'Larger refundable deposit held in escrow',
-  },
-  {
-    category: 'timing',
-    title: 'Give on close date, hold firm on everything else',
-    oneLiner: 'Let the buyer have the timeline they want — then use that goodwill to hold on price, contingencies, and concessions.',
-    reasoning: 'Nakamura wants 21 days. Westside wants 14. Instead of pushing back on their preferred timing, grant it — and use the goodwill to hold firm on price and contingencies. Buyers consistently overvalue certainty on their close date. You\'re giving them something that feels like a major concession but costs you nothing financially. Meanwhile, you maintain leverage on the terms that actually affect your net proceeds.',
-    sellerImpact: 'high',
-    buyerFriction: 'none',
-    tags: ['Perceived Concession', 'Zero Cost', 'Goodwill Builder'],
-    applicableTo: ['offer-a', 'offer-c'],
-    sellerGets: 'Leverage to hold on price and contingency terms',
-    buyerGives: 'Nothing — they get their preferred timeline',
-  },
-  {
-    category: 'appraisal',
-    title: 'Require appraisal gap coverage on financed offers',
-    oneLiner: 'The #1 deal-killer in luxury markets is a low appraisal. The Kapoors already offered coverage — make it a requirement for everyone.',
-    reasoning: 'In luxury real estate, appraisals routinely come in below contract price because comparable sales data is thin. When that happens with a financed offer, the deal either renegotiates or falls apart. The Kapoors already volunteered $200K in gap coverage — that\'s the kind of preparation that separates serious offers from aspirational ones. For the Chen and Ashford offers, requiring $150K–$200K in coverage isn\'t unreasonable. If a buyer can\'t commit to covering a potential gap, that tells you a lot about their financial ceiling and their willingness to fight for this property.',
-    sellerImpact: 'critical',
-    buyerFriction: 'moderate',
-    tags: ['Deal Protection', 'Counter Essential', 'Market Reality'],
-    applicableTo: ['offer-b', 'offer-d'],
-    sellerGets: 'Protection against the most common financed-deal failure',
-    buyerGives: 'Commitment to cover appraisal shortfall up to $200K',
-  },
-  {
-    category: 'repair',
-    title: 'Counter as sold as-is with a small price credit',
-    oneLiner: 'Replace open-ended repair negotiations with a fixed credit — you know exactly what it costs and avoid weeks of back-and-forth.',
-    reasoning: 'Post-inspection repair requests are where well-structured deals go sideways. A buyer finds $12K in cosmetic issues, asks for $30K in credits, and suddenly you\'re renegotiating the whole deal. Countering with "sold as-is" paired with a defined credit ($10K–$20K) gives the buyer something concrete while eliminating the uncertainty for you. You trade a known cost for the guarantee that no one comes back with a surprise list of repairs two weeks before close.',
-    sellerImpact: 'high',
-    buyerFriction: 'low',
-    tags: ['Risk Reduction', 'Timeline Protection', 'Clean Close'],
-    applicableTo: ['offer-b', 'offer-d'],
-    sellerGets: 'No surprise repair demands, predictable costs',
-    buyerGives: 'Accepts property condition in exchange for a defined credit',
-  },
-  {
-    category: 'concession',
-    title: 'Reject concession requests, offer a closing cost credit instead',
-    oneLiner: 'Westside is asking for $50K in cosmetic credits. Reframe it as a smaller closing cost credit — same gesture, lower cost.',
-    reasoning: 'Westside Holdings is requesting $50K for "cosmetic updates," which is a negotiation anchor, not a real number. Instead of engaging on their terms, counter with a $15K–$20K closing cost credit. It acknowledges their ask without accepting the frame. The buyer gets something to point to, and you avoid setting a precedent where concession requests balloon during the inspection period.',
-    sellerImpact: 'moderate',
-    buyerFriction: 'low',
-    tags: ['Reframes the Ask', 'Saves $30K+', 'Smart Counter'],
-    applicableTo: ['offer-c'],
-    sellerGets: 'Saves $30K+ vs. the original concession request',
-    buyerGives: 'Accepts smaller closing cost credit in lieu of repair credit',
-  },
-];
-
-/* ── Styling maps ── */
-const categoryIcons: Record<Category, typeof Home> = {
-  leaseback: Home, timing: Clock, deposit: DollarSign, contingency: ShieldCheck,
-  appraisal: TrendingDown, repair: Wrench, concession: BadgeCheck,
-};
-const categoryLabels: Record<Category, string> = {
-  leaseback: 'Leaseback', timing: 'Timing', deposit: 'Deposit', contingency: 'Contingency',
-  appraisal: 'Appraisal', repair: 'Repairs', concession: 'Concessions',
-};
-
-const impactStyles: Record<Impact, { label: string; bar: string; text: string }> = {
-  critical: { label: 'Critical', bar: 'bg-accent', text: 'text-accent' },
-  high: { label: 'High', bar: 'bg-success', text: 'text-success' },
-  moderate: { label: 'Moderate', bar: 'bg-info', text: 'text-info' },
-};
-const frictionStyles: Record<Friction, { label: string; bar: string; text: string }> = {
-  none: { label: 'None', bar: 'bg-success', text: 'text-success' },
-  low: { label: 'Low', bar: 'bg-success/60', text: 'text-success' },
-  moderate: { label: 'Moderate', bar: 'bg-warning', text: 'text-warning' },
-};
-
-const tagColorMap: Record<string, string> = {
-  'Pricing Leverage': 'badge-gold', 'Easy Win': 'badge-success', 'Proven Tactic': 'badge-info',
-  'Risk Reduction': 'badge-gold', 'Signals Strength': 'badge-info', 'Counter Essential': 'badge-warning',
-  'Commitment Test': 'badge-gold', 'Zero Buyer Cost': 'badge-success', 'Easy Ask': 'badge-success',
-  'Perceived Concession': 'badge-info', 'Zero Cost': 'badge-success', 'Goodwill Builder': 'badge-info',
-  'Deal Protection': 'badge-gold', 'Market Reality': 'badge-warning',
-  'Timeline Protection': 'badge-info', 'Clean Close': 'badge-success',
-  'Reframes the Ask': 'badge-info', 'Saves $30K+': 'badge-gold', 'Smart Counter': 'badge-info',
-};
-
-const buyerName = (id: string) => sampleProperty.offers.find(o => o.id === id)?.buyerName ?? id;
-
-/* ── Component ── */
 export default function Leverage() {
-  const [expanded, setExpanded] = useState<number | null>(0);
-  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
-  const [aiLoading, setAiLoading] = useState(false);
   const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [dealAnalysisId, setDealAnalysisId] = useState<string | null>(null);
+  const [groups, setGroups] = useState<OfferGroup[]>([]);
+  const [easiestWins, setEasiestWins] = useState<LeverageSuggestion[]>([]);
+  const [highestImpact, setHighestImpact] = useState<LeverageSuggestion[]>([]);
+  const [openOffer, setOpenOffer] = useState<string | null>(null);
+  const [openCard, setOpenCard] = useState<string | null>(null);
+  const [usingDemo, setUsingDemo] = useState(false);
 
-  const runAiLeverage = async () => {
-    setAiLoading(true);
-    try {
-      const offersPayload = sampleProperty.offers.map(o => ({
-        buyer: o.buyerName,
-        agent: o.agentName,
-        price: o.offerPrice,
-        financing: o.financingType,
-        down_payment_pct: o.downPaymentPercent,
-        earnest_money: o.earnestMoney,
-        contingencies: o.contingencies,
-        inspection_period: o.inspectionPeriod,
-        appraisal_terms: o.appraisalTerms,
-        close_days: o.closeDays,
-        leaseback: o.leasebackRequest,
-        concessions: o.concessions,
-        proof_of_funds: o.proofOfFunds,
-        pre_approval: o.preApproval,
-        close_probability: o.scores.closeProbability,
-        financial_confidence: o.scores.financialConfidence,
-        contingency_risk: o.scores.contingencyRisk,
-      }));
+  /* ── Load real (or demo) offers and compute suggestions ── */
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        let listingPrice = sampleProperty.listingPrice;
+        let goals: string[] = sampleProperty.sellerGoals;
+        let offers = sampleProperty.offers;
+        let analysisId: string | null = null;
+        let demo = true;
 
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-leverage`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(SUPABASE_KEY ? { Authorization: `Bearer ${SUPABASE_KEY}` } : {}),
-        },
-        body: JSON.stringify({
-          offers: offersPayload,
-          property: { address: sampleProperty.address, listingPrice: sampleProperty.listingPrice },
-        }),
-      });
+        if (user) {
+          const analysis = await fetchLatestAnalysisForUser(user.id);
+          if (analysis) {
+            analysisId = analysis.id;
+            const property = (analysis as any).properties;
+            if (property) {
+              listingPrice = Number(property.listing_price ?? listingPrice);
+              goals = (property.seller_goals as string[]) ?? goals;
+            }
+            const rows = await fetchOffersWithExtraction(analysis.id);
+            if (rows.length > 0) {
+              offers = rows.map((r) => adaptOffer(r, listingPrice));
+              demo = false;
+            }
 
-      const data = await response.json();
-      if (!response.ok || data?.error) {
-        toast({ title: 'AI Analysis Error', description: data?.error || 'Request failed', variant: 'destructive' });
-      } else if (data?.analysis) {
-        setAiAnalysis(data.analysis);
+            // Hydrate previously saved suggestions if present
+            const saved = await fetchLatestLeverageSuggestions(analysis.id);
+            if (saved && Array.isArray((saved as any).suggestions)) {
+              const existing = (saved as any).suggestions as LeverageSuggestion[];
+              const grouped = groupByOffer(existing, offers);
+              if (active) {
+                setGroups(grouped);
+                setEasiestWins(((saved as any).easiest_wins ?? []) as LeverageSuggestion[]);
+                setHighestImpact(
+                  ((saved as any).highest_impact_terms ?? []) as LeverageSuggestion[],
+                );
+                setSavedAt(new Date((saved as any).generated_at));
+              }
+            }
+          }
+        }
+
+        const result = generateLeverage(offers, { listingPrice, goals });
+
+        if (!active) return;
+        setDealAnalysisId(analysisId);
+        setUsingDemo(demo);
+        // Only overwrite groups if we didn't hydrate saved ones
+        setGroups((prev) =>
+          prev.length > 0 ? prev : groupByOffer(result.suggestions, offers),
+        );
+        setEasiestWins((prev) => (prev.length > 0 ? prev : result.easiest_wins));
+        setHighestImpact((prev) =>
+          prev.length > 0 ? prev : result.highest_impact_terms,
+        );
+        // Default-open first offer
+        const first = offers[0];
+        if (first) setOpenOffer((cur) => cur ?? first.id);
+      } catch (err: any) {
+        toast({
+          title: "Could not load leverage data",
+          description: err.message ?? String(err),
+          variant: "destructive",
+        });
+      } finally {
+        if (active) setLoading(false);
       }
-    } catch (e: any) {
-      toast({ title: 'AI Analysis Failed', description: e.message || 'Something went wrong', variant: 'destructive' });
+    })();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const allSuggestions = useMemo(
+    () => groups.flatMap((g) => g.suggestions),
+    [groups],
+  );
+
+  const handleSave = async () => {
+    if (!dealAnalysisId) {
+      toast({
+        title: "Sign in to save",
+        description: "Suggestions persist once you have an active deal analysis.",
+      });
+      return;
+    }
+    setSaving(true);
+    try {
+      const v = await saveLeverageSuggestions(dealAnalysisId, {
+        suggestions: allSuggestions,
+        easiest_wins: easiestWins,
+        highest_impact_terms: highestImpact,
+        notes: "Generated by rules engine",
+      });
+      setSavedAt(new Date());
+      toast({
+        title: "Suggestions saved",
+        description: `Stored as version ${v}.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Save failed",
+        description: err.message ?? String(err),
+        variant: "destructive",
+      });
     } finally {
-      setAiLoading(false);
+      setSaving(false);
     }
   };
 
   return (
     <AppLayout>
-      <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
+      <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
         {/* Header */}
-        <div>
-          <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Negotiation</p>
-          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Leverage Points</h1>
-          <p className="text-[13px] text-muted-foreground font-body mt-2 max-w-2xl">
-            Terms where a small seller concession — or a smart counter-ask — creates outsized value. Ranked by seller impact relative to buyer friction.
-          </p>
-        </div>
-
-        {/* Impact / Friction Legend */}
-        <div className="flex flex-wrap gap-6 text-[11px] font-body text-muted-foreground">
-          <div className="flex items-center gap-4">
-            <span className="tracking-[0.1em] uppercase font-medium">Seller Impact</span>
-            {(['critical', 'high', 'moderate'] as Impact[]).map(i => (
-              <span key={i} className="flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${impactStyles[i].bar}`} />
-                {impactStyles[i].label}
-              </span>
-            ))}
+        <div className="flex items-end justify-between gap-6 flex-wrap">
+          <div>
+            <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">
+              Negotiation
+            </p>
+            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">
+              Leverage Points
+            </h1>
+            <p className="text-[13px] text-muted-foreground font-body mt-2 max-w-2xl">
+              Per-offer terms where a small ask creates outsized seller value with low
+              buyer friction. Tagged for fast triage and ready to copy into a counter.
+            </p>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="tracking-[0.1em] uppercase font-medium">Buyer Friction</span>
-            {(['none', 'low', 'moderate'] as Friction[]).map(f => (
-              <span key={f} className="flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${frictionStyles[f].bar}`} />
-                {frictionStyles[f].label}
+          <div className="flex items-center gap-3">
+            {savedAt && (
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-body">
+                <CheckCircle2 className="w-3.5 h-3.5 text-success" />
+                Saved {savedAt.toLocaleTimeString()}
               </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Cards */}
-        <div className="space-y-3">
-          {leveragePoints.map((lp, i) => {
-            const isOpen = expanded === i;
-            const CatIcon = categoryIcons[lp.category];
-            const impact = impactStyles[lp.sellerImpact];
-            const friction = frictionStyles[lp.buyerFriction];
-
-            return (
-              <div
-                key={i}
-                className={`rounded-md border transition-all duration-300 ${isOpen ? 'border-border bg-card' : 'border-border/40 bg-card hover:border-border'}`}
-              >
-                {/* Collapsed header — always visible */}
-                <button
-                  onClick={() => setExpanded(isOpen ? null : i)}
-                  className="w-full text-left px-5 py-4 lg:px-6 lg:py-5 flex items-start gap-4"
-                >
-                  {/* Category icon */}
-                  <div className={`w-9 h-9 rounded-sm flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors ${isOpen ? 'bg-accent/10' : 'bg-muted'}`}>
-                    <CatIcon className={`w-4 h-4 ${isOpen ? 'text-accent' : 'text-muted-foreground'}`} strokeWidth={1.5} />
-                  </div>
-
-                  {/* Title & one-liner */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium">{categoryLabels[lp.category]}</span>
-                      <span className={`w-1.5 h-1.5 rounded-full ${impact.bar}`} title={`Seller impact: ${impact.label}`} />
-                    </div>
-                    <h3 className="text-[14px] font-medium font-body text-foreground leading-snug">{lp.title}</h3>
-                    <p className="text-[12px] text-muted-foreground font-body mt-1 leading-relaxed">{lp.oneLiner}</p>
-                  </div>
-
-                  {/* Impact & friction meters */}
-                  <div className="hidden sm:flex items-center gap-5 flex-shrink-0 pt-1">
-                    <div className="w-20">
-                      <p className="text-[9px] tracking-[0.1em] uppercase text-muted-foreground font-body mb-1">Seller</p>
-                      <div className="h-1 bg-muted rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${impact.bar}`} style={{ width: lp.sellerImpact === 'critical' ? '100%' : lp.sellerImpact === 'high' ? '70%' : '45%' }} />
-                      </div>
-                      <p className={`text-[10px] font-body mt-0.5 ${impact.text}`}>{impact.label}</p>
-                    </div>
-                    <div className="w-20">
-                      <p className="text-[9px] tracking-[0.1em] uppercase text-muted-foreground font-body mb-1">Friction</p>
-                      <div className="h-1 bg-muted rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${friction.bar}`} style={{ width: lp.buyerFriction === 'none' ? '8%' : lp.buyerFriction === 'low' ? '30%' : '60%' }} />
-                      </div>
-                      <p className={`text-[10px] font-body mt-0.5 ${friction.text}`}>{friction.label}</p>
-                    </div>
-                  </div>
-
-                  {/* Chevron */}
-                  <div className="flex-shrink-0 mt-1">
-                    {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-                  </div>
-                </button>
-
-                {/* Expanded detail */}
-                {isOpen && (
-                  <div className="px-5 pb-5 lg:px-6 lg:pb-6 ml-13 space-y-5 animate-fade-in">
-                    {/* Divider */}
-                    <div className="border-t border-border/50" />
-
-                    {/* Reasoning */}
-                    <div>
-                      <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium mb-2">Why This Works</p>
-                      <p className="text-[13px] text-muted-foreground font-body leading-relaxed">{lp.reasoning}</p>
-                    </div>
-
-                    {/* Trade visual */}
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <div className="rounded-md border border-success/20 bg-success/[0.03] p-4">
-                        <p className="text-[10px] tracking-[0.1em] uppercase text-success font-body font-medium mb-1.5">Seller Gets</p>
-                        <p className="text-[13px] font-body text-foreground">{lp.sellerGets}</p>
-                      </div>
-                      <div className="rounded-md border border-border/60 bg-muted/20 p-4">
-                        <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium mb-1.5">Buyer Gives</p>
-                        <p className="text-[13px] font-body text-foreground">{lp.buyerGives}</p>
-                      </div>
-                    </div>
-
-                    {/* Tags */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {lp.tags.map(t => (
-                        <span key={t} className={tagColorMap[t] ?? 'badge-info'}>{t}</span>
-                      ))}
-                    </div>
-
-                    {/* Applicable offers */}
-                    <div>
-                      <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium mb-2">Best Applied To</p>
-                      <div className="flex flex-wrap gap-2">
-                        {lp.applicableTo.map(id => {
-                          const offer = sampleProperty.offers.find(o => o.id === id);
-                          if (!offer) return null;
-                          return (
-                            <div key={id} className="flex items-center gap-2 rounded-sm border border-border/50 bg-muted/30 px-3 py-2">
-                              <span className="text-[12px] font-medium font-body text-foreground">{offer.buyerName}</span>
-                              <span className="text-[11px] text-muted-foreground font-body">{formatCurrency(offer.offerPrice)}</span>
-                              <ArrowRight className="w-3 h-3 text-muted-foreground" />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* AI Leverage Strategist */}
-        <div className="rounded-md border border-border/60 bg-card">
-          <div className="p-5 border-b border-border/40 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-sm bg-accent/10 flex items-center justify-center">
-                <Brain className="w-4 h-4 text-accent" strokeWidth={1.5} />
-              </div>
-              <div>
-                <p className="text-[13px] font-body font-medium text-foreground">AI Leverage Strategist</p>
-                <p className="text-[11px] text-muted-foreground font-body">Analyzes offers for high-value, low-friction negotiation terms</p>
-              </div>
-            </div>
+            )}
             <button
-              onClick={runAiLeverage}
-              disabled={aiLoading}
+              onClick={handleSave}
+              disabled={saving || loading || allSuggestions.length === 0}
               className="flex items-center gap-2 px-4 py-2 rounded-md bg-accent text-accent-foreground text-[12px] font-body font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
             >
-              {aiLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              {aiLoading ? 'Analyzing…' : aiAnalysis ? 'Re-analyze' : 'Get AI Analysis'}
+              {saving ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
+              {saving ? "Saving…" : "Save suggestions"}
             </button>
           </div>
-
-          {aiAnalysis && (
-            <div className="p-5 space-y-5">
-              {/* Easiest Wins */}
-              {aiAnalysis.easiest_wins?.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Zap className="w-4 h-4 text-success" strokeWidth={1.5} />
-                    <p className="text-[10px] tracking-[0.15em] uppercase text-success font-body font-medium">Easiest Wins</p>
-                  </div>
-                  <div className="space-y-2">
-                    {aiAnalysis.easiest_wins.map((win: string, i: number) => (
-                      <div key={i} className="rounded-md border border-success/20 bg-success/[0.03] p-3">
-                        <p className="text-[12px] text-foreground font-body leading-relaxed">{win}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Highest Impact Terms */}
-              {aiAnalysis.highest_impact_terms?.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Target className="w-4 h-4 text-accent" strokeWidth={1.5} />
-                    <p className="text-[10px] tracking-[0.15em] uppercase text-accent font-body font-medium">Highest Impact Terms</p>
-                  </div>
-                  <div className="space-y-2">
-                    {aiAnalysis.highest_impact_terms.map((term: string, i: number) => (
-                      <div key={i} className="rounded-md border border-accent/20 bg-accent/[0.03] p-3">
-                        <p className="text-[12px] text-foreground font-body leading-relaxed">{term}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* AI Leverage Suggestions */}
-              {aiAnalysis.leverage_suggestions?.length > 0 && (
-                <div>
-                  <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-3">AI-Generated Leverage Points</p>
-                  <div className="space-y-2">
-                    {aiAnalysis.leverage_suggestions.map((s: any, i: number) => {
-                      const impactColor = s.seller_impact === 'high' ? 'text-accent' : s.seller_impact === 'medium' ? 'text-success' : 'text-muted-foreground';
-                      const frictionColor = s.buyer_friction === 'low' ? 'text-success' : s.buyer_friction === 'medium' ? 'text-warning' : 'text-destructive';
-                      return (
-                        <div key={i} className="rounded-md border border-border/40 p-4 space-y-3">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium">{s.category}</span>
-                                <span className={`text-[10px] font-body font-medium ${impactColor}`}>Impact: {s.seller_impact}</span>
-                                <span className={`text-[10px] font-body font-medium ${frictionColor}`}>Friction: {s.buyer_friction}</span>
-                              </div>
-                              <p className="text-[13px] font-body font-medium text-foreground">{s.term}</p>
-                              <p className="text-[12px] text-muted-foreground font-body mt-1 leading-relaxed">{s.headline}</p>
-                            </div>
-                          </div>
-                          <p className="text-[12px] text-muted-foreground font-body leading-relaxed">{s.reasoning}</p>
-                          <div className="grid sm:grid-cols-2 gap-2">
-                            <div className="rounded-sm border border-success/20 bg-success/[0.03] p-2.5">
-                              <p className="text-[9px] tracking-[0.1em] uppercase text-success font-body font-medium mb-1">Seller Gets</p>
-                              <p className="text-[11px] font-body text-foreground">{s.seller_gets}</p>
-                            </div>
-                            <div className="rounded-sm border border-border/50 bg-muted/20 p-2.5">
-                              <p className="text-[9px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium mb-1">Buyer Gives</p>
-                              <p className="text-[11px] font-body text-foreground">{s.buyer_gives}</p>
-                            </div>
-                          </div>
-                          {s.applicable_buyers?.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5">
-                              {s.applicable_buyers.map((b: string, j: number) => (
-                                <span key={j} className="badge-info">{b}</span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Notes */}
-              {aiAnalysis.notes && (
-                <div className="rounded-md bg-muted/50 p-3">
-                  <p className="text-[11px] text-muted-foreground font-body italic leading-relaxed">
-                    💡 {aiAnalysis.notes}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
         </div>
+
+        {usingDemo && !loading && (
+          <div className="rounded-md border border-border/50 bg-muted/30 px-4 py-2.5 text-[12px] text-muted-foreground font-body">
+            Showing demo data. Run an analysis with real offers to generate
+            leverage from your own extracted fields.
+          </div>
+        )}
+
+        {/* Loading state */}
+        {loading && (
+          <div className="flex items-center justify-center py-20 text-muted-foreground">
+            <Loader2 className="w-5 h-5 animate-spin mr-2" />
+            <span className="text-[13px] font-body">Generating leverage suggestions…</span>
+          </div>
+        )}
+
+        {!loading && (
+          <>
+            {/* Top-line: easiest wins + highest impact */}
+            <div className="grid lg:grid-cols-2 gap-4">
+              <SummaryColumn
+                title="Easiest Wins"
+                hint="Lowest buyer friction. Counter-ask first."
+                Icon={Zap}
+                accent="text-success"
+                bg="bg-success/[0.04] border-success/20"
+                items={easiestWins}
+              />
+              <SummaryColumn
+                title="Highest Impact Terms"
+                hint="Biggest seller value if accepted."
+                Icon={Target}
+                accent="text-accent"
+                bg="bg-accent/[0.04] border-accent/20"
+                items={highestImpact}
+              />
+            </div>
+
+            {/* Per-offer groups */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
+                <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium">
+                  Per-Offer Suggestions
+                </p>
+              </div>
+
+              {groups.length === 0 && (
+                <div className="rounded-md border border-border/40 p-8 text-center text-[13px] text-muted-foreground font-body">
+                  No offers found. Add offers and run extraction to surface
+                  leverage opportunities.
+                </div>
+              )}
+
+              {groups.map((g) => {
+                const isOpen = openOffer === g.offerId;
+                return (
+                  <div
+                    key={g.offerId}
+                    className="rounded-md border border-border/50 bg-card overflow-hidden"
+                  >
+                    <button
+                      onClick={() => setOpenOffer(isOpen ? null : g.offerId)}
+                      className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left hover:bg-muted/20 transition-colors"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div>
+                          <p className="text-[14px] font-medium font-body text-foreground">
+                            {g.buyerName}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground font-body mt-0.5">
+                            {formatCurrency(g.offerPrice)} · {g.suggestions.length}{" "}
+                            suggestion{g.suggestions.length === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <TagSummary suggestions={g.suggestions} />
+                        {isOpen ? (
+                          <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </div>
+                    </button>
+
+                    {isOpen && (
+                      <div className="px-5 pb-5 space-y-2 animate-fade-in">
+                        <div className="border-t border-border/40 -mx-5 mb-3" />
+                        {g.suggestions.length === 0 && (
+                          <p className="text-[12px] text-muted-foreground font-body py-3">
+                            No high-leverage suggestions for this offer — terms are
+                            already tight.
+                          </p>
+                        )}
+                        {g.suggestions.map((s) => (
+                          <SuggestionCard
+                            key={s.id}
+                            s={s}
+                            open={openCard === s.id}
+                            onToggle={() =>
+                              setOpenCard(openCard === s.id ? null : s.id)
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </AppLayout>
   );
+}
+
+/* ── Subcomponents ── */
+
+function SummaryColumn({
+  title,
+  hint,
+  Icon,
+  accent,
+  bg,
+  items,
+}: {
+  title: string;
+  hint: string;
+  Icon: typeof Zap;
+  accent: string;
+  bg: string;
+  items: LeverageSuggestion[];
+}) {
+  return (
+    <div className={`rounded-md border ${bg} p-5`}>
+      <div className="flex items-center gap-2 mb-1">
+        <Icon className={`w-4 h-4 ${accent}`} strokeWidth={1.5} />
+        <p className={`text-[10px] tracking-[0.15em] uppercase ${accent} font-body font-medium`}>
+          {title}
+        </p>
+      </div>
+      <p className="text-[11px] text-muted-foreground font-body mb-4">{hint}</p>
+      <div className="space-y-2">
+        {items.length === 0 && (
+          <p className="text-[12px] text-muted-foreground font-body italic">
+            Nothing to surface yet.
+          </p>
+        )}
+        {items.map((s) => (
+          <div
+            key={s.id}
+            className="rounded-sm border border-border/40 bg-background/40 p-3"
+          >
+            <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body mb-1">
+              {s.buyer_name} · {categoryLabels[s.category]}
+            </p>
+            <p className="text-[12px] font-body text-foreground leading-snug">
+              {s.term}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TagSummary({ suggestions }: { suggestions: LeverageSuggestion[] }) {
+  const counts: Partial<Record<LeverageTag, number>> = {};
+  suggestions.forEach((s) =>
+    s.tags.forEach((t) => (counts[t] = (counts[t] ?? 0) + 1)),
+  );
+  const entries = Object.entries(counts) as [LeverageTag, number][];
+  if (entries.length === 0) return null;
+  return (
+    <div className="hidden md:flex items-center gap-1.5">
+      {entries.map(([tag, n]) => (
+        <span key={tag} className={`${tagStyles[tag]} text-[10px]`}>
+          {tag} · {n}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function SuggestionCard({
+  s,
+  open,
+  onToggle,
+}: {
+  s: LeverageSuggestion;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = categoryIcons[s.category];
+  return (
+    <div className="rounded-md border border-border/40 bg-background/30">
+      <button
+        onClick={onToggle}
+        className="w-full text-left px-4 py-3 flex items-start gap-3"
+      >
+        <div className="w-8 h-8 rounded-sm bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Icon className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium">
+              {categoryLabels[s.category]}
+            </span>
+          </div>
+          <p className="text-[13px] font-medium font-body text-foreground leading-snug">
+            {s.term}
+          </p>
+          <p className="text-[12px] text-muted-foreground font-body mt-1 leading-relaxed">
+            {s.headline}
+          </p>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {s.tags.map((t) => (
+              <span key={t} className={tagStyles[t]}>
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="hidden sm:flex flex-col gap-2 items-end flex-shrink-0 w-32">
+          <Meter label="Seller value" score={s.seller_impact_score} />
+          <Meter label="Buyer friction" score={s.buyer_friction_score} inverse />
+        </div>
+        <div className="flex-shrink-0 mt-1">
+          {open ? (
+            <ChevronUp className="w-4 h-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-muted-foreground" />
+          )}
+        </div>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 pl-14 space-y-3 animate-fade-in">
+          <div>
+            <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium mb-1.5">
+              Why this works
+            </p>
+            <p className="text-[12px] text-muted-foreground font-body leading-relaxed">
+              {s.reasoning}
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-2">
+            <div className="rounded-sm border border-success/20 bg-success/[0.03] p-3">
+              <p className="text-[10px] tracking-[0.1em] uppercase text-success font-body font-medium mb-1">
+                Seller gets
+              </p>
+              <p className="text-[12px] font-body text-foreground">{s.seller_gets}</p>
+            </div>
+            <div className="rounded-sm border border-border/50 bg-muted/20 p-3">
+              <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium mb-1">
+                Buyer gives
+              </p>
+              <p className="text-[12px] font-body text-foreground">{s.buyer_gives}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Meter({
+  label,
+  score,
+  inverse = false,
+}: {
+  label: string;
+  score: number;
+  inverse?: boolean;
+}) {
+  return (
+    <div className="w-full">
+      <p className="text-[9px] tracking-[0.1em] uppercase text-muted-foreground font-body mb-0.5">
+        {label}
+      </p>
+      <div className="h-1 bg-muted rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full ${meterColor(score, inverse)}`}
+          style={{ width: `${Math.max(8, Math.min(100, score))}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ── Helpers ── */
+
+function groupByOffer(
+  suggestions: LeverageSuggestion[],
+  offers: { id: string; buyerName: string; offerPrice: number }[],
+): OfferGroup[] {
+  return offers.map((o) => ({
+    offerId: o.id,
+    buyerName: o.buyerName,
+    offerPrice: o.offerPrice,
+    suggestions: suggestions.filter((s) => s.offer_id === o.id),
+  }));
 }

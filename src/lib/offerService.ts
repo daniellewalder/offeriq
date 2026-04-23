@@ -363,3 +363,50 @@ export async function upsertSellerPriorities(
   if (error) throw error;
   return data.id;
 }
+
+// ─── Leverage Suggestions ───
+
+import type { LeverageSuggestion } from "@/lib/leverageEngine";
+
+export async function saveLeverageSuggestions(
+  dealAnalysisId: string,
+  payload: {
+    suggestions: LeverageSuggestion[];
+    easiest_wins: LeverageSuggestion[];
+    highest_impact_terms: LeverageSuggestion[];
+    notes?: string;
+  },
+) {
+  const { data: latest } = await supabase
+    .from("leverage_suggestions")
+    .select("version")
+    .eq("deal_analysis_id", dealAnalysisId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const nextVersion = (latest?.version ?? 0) + 1;
+
+  const { error } = await supabase.from("leverage_suggestions").insert({
+    deal_analysis_id: dealAnalysisId,
+    version: nextVersion,
+    suggestions: payload.suggestions as any,
+    easiest_wins: payload.easiest_wins as any,
+    highest_impact_terms: payload.highest_impact_terms as any,
+    notes: payload.notes ?? null,
+  });
+  if (error) throw error;
+  return nextVersion;
+}
+
+export async function fetchLatestLeverageSuggestions(dealAnalysisId: string) {
+  const { data, error } = await supabase
+    .from("leverage_suggestions")
+    .select("*")
+    .eq("deal_analysis_id", dealAnalysisId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
