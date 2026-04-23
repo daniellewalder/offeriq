@@ -1,18 +1,30 @@
 import AppLayout from '@/components/AppLayout';
 import { sampleProperty, formatCurrency } from '@/data/sampleData';
-import { useMemo, useState } from 'react';
-import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle, Sparkles, Zap, MessageSquare, ArrowRight, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle, Sparkles, Zap, MessageSquare, ArrowRight, Loader2, Zap as ZapIcon, Gauge, FileWarning } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { fetchLatestAnalysisForUser, fetchOffersWithExtraction } from '@/lib/offerService';
+import { adaptOffer } from '@/lib/offerAdapter';
+import { Skeleton } from '@/components/ui/skeleton';
 
-type SortKey = 'price' | 'risk' | 'close' | 'financial' | 'contingencies';
+type SortKey =
+  | 'price'
+  | 'closeProb'
+  | 'financial'
+  | 'contingencyRisk'
+  | 'timingRisk'
+  | 'completeness';
 type Offer = (typeof sampleProperty.offers)[0];
+type OfferWithMeta = Offer & { missingItems?: string[]; notableRisks?: string[]; notableStrengths?: string[] };
 
 const sortOptions: { key: SortKey; label: string }[] = [
   { key: 'price', label: 'Highest Price' },
-  { key: 'risk', label: 'Lowest Risk' },
-  { key: 'close', label: 'Shortest Close' },
-  { key: 'financial', label: 'Strongest Financial' },
-  { key: 'contingencies', label: 'Fewest Contingencies' },
+  { key: 'closeProb', label: 'Close Probability' },
+  { key: 'financial', label: 'Financial Confidence' },
+  { key: 'contingencyRisk', label: 'Contingency Risk' },
+  { key: 'timingRisk', label: 'Timing Risk' },
+  { key: 'completeness', label: 'Completeness' },
 ];
 
 /* ── Helpers ── */
