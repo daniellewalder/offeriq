@@ -26,8 +26,8 @@ export default function BuyerReadiness() {
     <AppLayout>
       <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
         <div>
-          <h1 className="heading-display text-2xl lg:text-3xl font-semibold mb-1">Buyer Offer Readiness</h1>
-          <p className="text-muted-foreground font-body text-sm">Review and strengthen your offer package before submission.</p>
+          <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Readiness</p>
+          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Buyer Offer Readiness</h1>
         </div>
 
         {/* Upload area */}
