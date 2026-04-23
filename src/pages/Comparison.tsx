@@ -214,8 +214,10 @@ export default function Comparison() {
               </div>
               {sorted.map((o) => {
                 const best = o.offerPrice === maxPrice;
-                const delta = priceDelta(o);
-                const pct = ((o.offerPrice - 8500000) / (9300000 - 8500000)) * 100;
+                const delta = o.offerPrice - property.listingPrice;
+                const minP = bestVal(offers, x => x.offerPrice, 'min');
+                const range = Math.max(maxPrice - minP, 1);
+                const pct = ((o.offerPrice - minP) / range) * 100;
                 return (
                   <div key={o.id} className={`flex-1 min-w-[160px] p-4 border-l border-border/40 ${best ? 'bg-accent/[0.04]' : ''}`}>
                     <p className={`font-display text-xl ${best ? 'text-foreground font-medium' : 'text-foreground font-light'}`}>
