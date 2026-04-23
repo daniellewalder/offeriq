@@ -197,30 +197,28 @@ export default function Report() {
 
   return (
     <AppLayout>
-      <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
+      <div className="max-w-5xl mx-auto space-y-10 animate-fade-in">
         {/* Header */}
-        <div className="flex items-end justify-between gap-6 flex-wrap">
+        <div className="flex items-end justify-between gap-6 flex-wrap pb-6 border-b border-border/70">
           <div>
-            <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">
-              Report
-            </p>
-            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">
-              Recommendation Report
+            <p className="eyebrow mb-4">Recommendation Report</p>
+            <h1 className="text-display-lg text-foreground">
+              The deal, distilled.
             </h1>
-            <p className="text-[13px] text-muted-foreground font-body mt-2">
-              {propertyAddress} · {offerCount} offer{offerCount === 1 ? "" : "s"} analyzed
+            <p className="text-[13px] text-muted-foreground font-body mt-3 tracking-wide">
+              {propertyAddress} · {offerCount} offer{offerCount === 1 ? "" : "s"} analyzed · prepared {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
             </p>
           </div>
           <button
             onClick={() => window.print()}
-            className="hidden sm:flex items-center gap-2 px-4 py-2 border border-border rounded-sm text-[12px] font-medium font-body hover:bg-muted/50 transition-colors tracking-wide"
+            className="btn-secondary no-print"
           >
-            <Download className="w-4 h-4" /> Export PDF
+            <Download className="w-3.5 h-3.5" /> Export PDF
           </button>
         </div>
 
         {usingDemo && !loading && (
-          <div className="rounded-md border border-border/50 bg-muted/30 px-4 py-2.5 text-[12px] text-muted-foreground font-body">
+          <div className="rounded-md border border-border/70 bg-surface-2 px-4 py-2.5 text-[12px] text-muted-foreground font-body tracking-wide">
             Showing a demo report. Run an analysis with real offers to generate one from your own data.
           </div>
         )}
@@ -235,35 +233,39 @@ export default function Report() {
         {!loading && report && (
           <>
             {/* Hero recommendation */}
-            <div className="card-elevated p-7 lg:p-9 ring-1 ring-gold/30 bg-gradient-to-br from-card to-gold-light/30">
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="w-4 h-4 text-gold" />
-                <p className="text-[11px] tracking-[0.15em] uppercase text-gold font-body font-medium">
-                  The headline
+            <div className="card-feature p-8 lg:p-12 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-gold opacity-[0.04] rounded-full blur-3xl" />
+              <div className="flex items-center gap-2 mb-5 relative">
+                <Sparkles className="w-3.5 h-3.5 text-accent" />
+                <p className="text-[10.5px] tracking-[0.22em] uppercase text-accent font-body font-medium">
+                  The headline recommendation
                 </p>
               </div>
-              <h2 className="heading-display text-2xl lg:text-3xl text-foreground leading-snug mb-3">
+              <h2 className="heading-display text-3xl lg:text-[2.5rem] text-foreground leading-[1.1] mb-5 max-w-3xl tracking-editorial">
                 {report.best_overall.headline}
               </h2>
-              <p className="text-[14px] text-muted-foreground font-body leading-relaxed max-w-3xl">
+              <p className="text-[15px] text-foreground/75 font-body leading-[1.7] max-w-3xl">
                 {report.best_overall.explanation}
               </p>
               {report.best_overall.proof_points.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-5">
-                  {report.best_overall.proof_points.map((p, i) => (
-                    <span
-                      key={i}
-                      className="text-[11px] font-body bg-background/80 border border-border/50 px-2.5 py-1 rounded-full text-foreground/80"
-                    >
-                      {p}
-                    </span>
-                  ))}
-                </div>
+                <>
+                  <div className="rule-hairline my-7 max-w-3xl" />
+                  <div className="flex flex-wrap gap-x-6 gap-y-3 max-w-3xl">
+                    {report.best_overall.proof_points.map((p, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[12px] font-body text-foreground/70">
+                        <span className="w-1 h-1 rounded-full bg-accent" />
+                        <span>{p}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
             {/* Three supporting picks */}
-            <div className="grid sm:grid-cols-3 gap-4">
+            <div>
+              <p className="eyebrow mb-5">Supporting analysis</p>
+              <div className="grid sm:grid-cols-3 gap-4">
               <PickCard
                 icon={<Shield className="w-5 h-5 text-success" />}
                 iconBg="bg-success/10"
@@ -284,30 +286,34 @@ export default function Report() {
                 label="Best fit for seller"
                 pick={report.best_fit}
               />
+              </div>
             </div>
 
             {/* Top Risks */}
-            <div className="card-elevated p-6">
-              <div className="flex items-center gap-2 mb-5">
-                <AlertTriangle className="w-5 h-5 text-warning" />
-                <h3 className="heading-display text-lg font-semibold">Top risks to watch</h3>
+            <div className="card-elevated p-7 lg:p-8">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <p className="eyebrow-plain mb-2">Diligence</p>
+                  <h3 className="text-display-sm">Top risks to watch</h3>
+                </div>
+                <AlertTriangle className="w-4 h-4 text-warning" />
               </div>
-              <div className="space-y-4">
+              <div className="space-y-5">
                 {report.top_risks.map((risk, i) => (
                   <div
                     key={i}
-                    className="flex items-start gap-4 pb-4 border-b border-border/40 last:border-0 last:pb-0"
+                    className="flex items-start gap-5 pb-5 border-b border-border/50 last:border-0 last:pb-0"
                   >
                     <span
-                      className={`text-[10px] uppercase tracking-wider font-body font-medium px-2 py-0.5 rounded border ${severityChip[risk.severity]} flex-shrink-0 mt-0.5`}
+                      className={`text-[9.5px] uppercase tracking-[0.16em] font-body font-medium px-2 py-[3px] rounded border ${severityChip[risk.severity]} flex-shrink-0 mt-0.5 min-w-[60px] text-center`}
                     >
                       {risk.severity}
                     </span>
                     <div className="flex-1">
-                      <p className="text-[13px] font-body font-medium text-foreground mb-1">
+                      <p className="text-[13.5px] font-body font-medium text-foreground mb-1.5">
                         {risk.title}
                       </p>
-                      <p className="text-[13px] text-muted-foreground font-body leading-relaxed">
+                      <p className="text-[13px] text-muted-foreground font-body leading-[1.65]">
                         {risk.explanation}
                       </p>
                     </div>
@@ -317,21 +323,24 @@ export default function Report() {
             </div>
 
             {/* Negotiation Path */}
-            <div className="card-elevated p-6">
-              <h3 className="heading-display text-lg font-semibold mb-5">How we'd play this</h3>
-              <ol className="space-y-5">
+            <div className="card-elevated p-7 lg:p-8">
+              <p className="eyebrow-plain mb-2">Strategy</p>
+              <h3 className="text-display-sm mb-7">How we'd play this</h3>
+              <ol className="space-y-6">
                 {report.negotiation_path.map((step) => (
-                  <li key={step.order} className="flex items-start gap-4">
-                    <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <span className="text-primary-foreground text-[12px] font-semibold">
-                        {step.order}
-                      </span>
+                  <li key={step.order} className="flex items-start gap-5">
+                    <div className="flex-shrink-0 mt-0.5 relative">
+                      <div className="w-9 h-9 rounded-full bg-card border border-border-strong flex items-center justify-center shadow-xs">
+                        <span className="heading-display text-[15px] text-foreground tabular-nums">
+                          {step.order}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <p className="text-[13px] font-body font-semibold text-foreground mb-1">
+                    <div className="flex-1 pt-1">
+                      <p className="text-[14px] font-body font-medium text-foreground mb-1.5">
                         {step.headline}
                       </p>
-                      <p className="text-[13px] text-muted-foreground font-body leading-relaxed">
+                      <p className="text-[13px] text-muted-foreground font-body leading-[1.7]">
                         {step.detail}
                       </p>
                     </div>
@@ -342,31 +351,41 @@ export default function Report() {
 
             {/* Suggested Counter */}
             {report.suggested_counter && (
-              <div className="card-elevated p-6 border-l-4 border-l-accent">
-                <div className="flex items-center gap-2 mb-2">
-                  <Award className="w-4 h-4 text-accent" />
-                  <p className="text-[11px] tracking-[0.15em] uppercase text-accent font-body font-medium">
+              <div className="card-ink p-8 lg:p-10 relative overflow-hidden">
+                <div className="absolute -top-20 -right-20 w-64 h-64 bg-gradient-gold opacity-10 rounded-full blur-3xl" />
+                <div className="flex items-center gap-2 mb-3 relative">
+                  <Award className="w-3.5 h-3.5 text-accent" />
+                  <p className="text-[10.5px] tracking-[0.22em] uppercase text-accent font-body font-medium">
                     Suggested counter
                   </p>
                 </div>
-                <h3 className="heading-display text-xl font-semibold mb-3">
+                <h3 className="heading-display text-2xl lg:text-3xl mb-4 max-w-3xl text-primary-foreground leading-[1.15]">
                   {report.suggested_counter.headline}
                 </h3>
-                <p className="text-[13px] text-muted-foreground font-body leading-relaxed mb-4">
+                <p className="text-[14px] text-primary-foreground/70 font-body leading-[1.7] mb-7 max-w-3xl">
                   {report.suggested_counter.rationale}
                 </p>
-                <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-end gap-8 flex-wrap">
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-body">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-primary-foreground/50 font-body mb-2">
                       Acceptance likelihood
                     </p>
-                    <p className="heading-display text-2xl text-foreground">
+                    <p className="score-numeral text-primary-foreground">
                       {report.suggested_counter.acceptance_likelihood}%
+                    </p>
+                  </div>
+                  <div className="h-12 w-px bg-primary-foreground/15 hidden sm:block" />
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-primary-foreground/50 font-body mb-2">
+                      Counter target
+                    </p>
+                    <p className="text-[14px] font-body text-primary-foreground tabular-nums">
+                      {report.suggested_counter.target_buyer}
                     </p>
                   </div>
                   <Link
                     to="/counter-strategy"
-                    className="ml-auto flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-medium font-body hover:opacity-90 transition-opacity"
+                    className="ml-auto inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-gold text-accent-foreground rounded-md text-[12.5px] font-medium font-body tracking-wide hover:shadow-md transition-all"
                   >
                     View full counter strategy <ArrowRight className="w-4 h-4" />
                   </Link>
@@ -375,12 +394,13 @@ export default function Report() {
             )}
 
             {/* Bottom line */}
-            <div className="card-elevated p-7 bg-muted/20">
-              <div className="flex items-start gap-4">
-                <Quote className="w-6 h-6 text-muted-foreground/40 flex-shrink-0 mt-1" />
-                <div>
-                  <h3 className="heading-display text-lg font-semibold mb-2">The bottom line</h3>
-                  <p className="text-[14px] text-foreground/90 font-body leading-relaxed">
+            <div className="card-paper p-8 lg:p-10">
+              <div className="flex items-start gap-5">
+                <Quote className="w-7 h-7 text-accent/40 flex-shrink-0 mt-1" strokeWidth={1.25} />
+                <div className="flex-1">
+                  <p className="eyebrow-plain mb-2">In summary</p>
+                  <h3 className="text-display-sm mb-4">The bottom line</h3>
+                  <p className="text-[15px] text-foreground/85 font-body leading-[1.75] italic" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontWeight: 400, fontSize: '1.125rem', fontStyle: 'italic' }}>
                     {report.bottom_line}
                   </p>
                 </div>
