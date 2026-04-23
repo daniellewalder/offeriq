@@ -302,3 +302,64 @@ export async function fetchLatestRiskScores(offerIds: string[]) {
   }
   return byOffer;
 }
+
+// ─── Seller Priorities ───
+
+export interface SellerPriorityWeights {
+  price_weight: number;
+  certainty_weight: number;
+  contingencies_weight: number;
+  speed_weight: number;
+  leaseback_weight: number;
+  repair_weight: number;
+  financial_weight: number;
+}
+
+export async function fetchSellerPriorities(
+  userId: string,
+  dealAnalysisId: string,
+) {
+  const { data, error } = await supabase
+    .from("seller_priorities")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("deal_analysis_id", dealAnalysisId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function upsertSellerPriorities(
+  userId: string,
+  dealAnalysisId: string,
+  weights: SellerPriorityWeights,
+) {
+  // Try update first
+  const { data: existing } = await supabase
+    .from("seller_priorities")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("deal_analysis_id", dealAnalysisId)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await supabase
+      .from("seller_priorities")
+      .update({ ...weights, updated_at: new Date().toISOString() })
+      .eq("id", existing.id);
+    if (error) throw error;
+    return existing.id;
+  }
+
+  const { data, error } = await supabase
+    .from("seller_priorities")
+    .insert({
+      user_id: userId,
+      deal_analysis_id: dealAnalysisId,
+      ...weights,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id;
+}

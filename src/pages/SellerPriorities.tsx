@@ -1,8 +1,17 @@
 import { useState, useMemo, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { sampleProperty, formatCurrency } from '@/data/sampleData';
-import { Crown, DollarSign, ShieldCheck, FileX, Zap, Home, Wrench, TrendingUp, ArrowRight, Brain, AlertTriangle, Target, Loader2, RefreshCw } from 'lucide-react';
+import { Crown, DollarSign, ShieldCheck, FileX, Zap, Home, Wrench, TrendingUp, ArrowRight, Brain, AlertTriangle, Target, Loader2, RefreshCw, Save, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import {
+  fetchLatestAnalysisForUser,
+  fetchOffersWithExtraction,
+  fetchSellerPriorities,
+  upsertSellerPriorities,
+} from '@/lib/offerService';
+import { adaptOffer } from '@/lib/offerAdapter';
+import type { Offer } from '@/data/sampleData';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -36,9 +45,9 @@ const intensityColor = (v: number) => {
 };
 
 /* Score breakdown per-dimension for each offer so we can show factor contributions */
-function computeScores(weights: Record<PriorityKey, number>) {
+function computeScores(weights: Record<PriorityKey, number>, offers: Offer[]) {
   const totalWeight = Object.values(weights).reduce((s, w) => s + w, 0) || 1;
-  return [...sampleProperty.offers].map(o => {
+  return [...offers].map(o => {
     const factors: Record<PriorityKey, number> = {
       price: (o.offerPrice / 10000000),
       certainty: (o.scores.closeProbability / 100),
@@ -59,7 +68,13 @@ export default function SellerPriorities() {
     price: 80, certainty: 70, contingencies: 60, speed: 50, leaseback: 30, repair: 40, financial: 65,
   });
   const [prevTopId, setPrevTopId] = useState<string | null>(null);
-  const ranked = useMemo(() => computeScores(weights), [weights]);
+  const [offers, setOffers] = useState<Offer[]>(sampleProperty.offers);
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [usingDemo, setUsingDemo] = useState(true);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const ranked = useMemo(() => computeScores(weights, offers), [weights, offers]);
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const { toast } = useToast();
@@ -71,13 +86,83 @@ export default function SellerPriorities() {
     setPrevTopId(topOffer.id);
   }, [topOffer.id]);
 
+  // Load real offers + saved priorities on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        setUserId(user.id);
+        const analysis = await fetchLatestAnalysisForUser(user.id);
+        if (!analysis) return;
+        setAnalysisId(analysis.id);
+
+        const [offerRows, savedPriorities] = await Promise.all([
+          fetchOffersWithExtraction(analysis.id),
+          fetchSellerPriorities(user.id, analysis.id),
+        ]);
+        if (cancelled) return;
+
+        if (offerRows.length > 0) {
+          const lp = Number(analysis.properties?.listing_price ?? sampleProperty.listingPrice);
+          setOffers(offerRows.map(r => adaptOffer(r, lp)));
+          setUsingDemo(false);
+        }
+
+        if (savedPriorities) {
+          setWeights({
+            price: savedPriorities.price_weight ?? 80,
+            certainty: savedPriorities.certainty_weight ?? 70,
+            contingencies: savedPriorities.contingencies_weight ?? 60,
+            speed: savedPriorities.speed_weight ?? 50,
+            leaseback: savedPriorities.leaseback_weight ?? 30,
+            repair: savedPriorities.repair_weight ?? 40,
+            financial: savedPriorities.financial_weight ?? 65,
+          });
+          setLastSavedAt(new Date(savedPriorities.updated_at).toLocaleTimeString());
+        }
+      } catch (e: any) {
+        toast({ title: 'Could not load saved priorities', description: 'Showing defaults.', variant: 'destructive' });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [toast]);
+
+  // Debounced auto-save when weights change
+  const [hasMounted, setHasMounted] = useState(false);
+  useEffect(() => { setHasMounted(true); }, []);
+  useEffect(() => {
+    if (!hasMounted || !userId || !analysisId) return;
+    setSaveStatus('saving');
+    const t = setTimeout(async () => {
+      try {
+        await upsertSellerPriorities(userId, analysisId, {
+          price_weight: weights.price,
+          certainty_weight: weights.certainty,
+          contingencies_weight: weights.contingencies,
+          speed_weight: weights.speed,
+          leaseback_weight: weights.leaseback,
+          repair_weight: weights.repair,
+          financial_weight: weights.financial,
+        });
+        setSaveStatus('saved');
+        setLastSavedAt(new Date().toLocaleTimeString());
+      } catch (e: any) {
+        setSaveStatus('error');
+        toast({ title: 'Save failed', description: e.message ?? 'Could not save priorities', variant: 'destructive' });
+      }
+    }, 700);
+    return () => clearTimeout(t);
+  }, [weights, userId, analysisId, hasMounted, toast]);
+
   const maxScore = ranked[0]?.compositeScore ?? 1;
   const spreadRange = maxScore - (ranked[ranked.length - 1]?.compositeScore ?? 0);
 
   const runAiRanking = async () => {
     setAiLoading(true);
     try {
-      const offersPayload = sampleProperty.offers.map(o => ({
+      const offersPayload = offers.map(o => ({
         buyer: o.buyerName,
         agent: o.agentName,
         price: o.offerPrice,
@@ -125,12 +210,23 @@ export default function SellerPriorities() {
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
         {/* Header */}
-        <div>
-          <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Priorities</p>
-          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Seller Priority Mapping</h1>
-          <p className="text-[13px] text-muted-foreground font-body mt-2">
-            Adjust what matters most — the ranking updates instantly.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Priorities</p>
+            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Seller Priority Mapping</h1>
+            <p className="text-[13px] text-muted-foreground font-body mt-2">
+              Adjust what matters most — the ranking updates instantly.
+              {usingDemo && <span className="ml-2 text-accent">· Demo data</span>}
+            </p>
+          </div>
+          {!usingDemo && (
+            <div className="flex items-center gap-2 text-[11px] font-body">
+              {saveStatus === 'saving' && <><Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" /><span className="text-muted-foreground">Saving…</span></>}
+              {saveStatus === 'saved' && lastSavedAt && <><CheckCircle2 className="w-3.5 h-3.5 text-success" /><span className="text-success">Saved {lastSavedAt}</span></>}
+              {saveStatus === 'error' && <><AlertTriangle className="w-3.5 h-3.5 text-destructive" /><span className="text-destructive">Save failed</span></>}
+              {saveStatus === 'idle' && lastSavedAt && <><Save className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-muted-foreground">Last saved {lastSavedAt}</span></>}
+            </div>
+          )}
         </div>
 
         {/* ── Top Recommendation Banner ── */}
