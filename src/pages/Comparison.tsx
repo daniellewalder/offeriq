@@ -45,20 +45,20 @@ export default function Comparison() {
   return (
     <AppLayout>
       <div className="max-w-full mx-auto space-y-6 animate-fade-in">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
           <div>
-            <h1 className="heading-display text-2xl lg:text-3xl font-semibold mb-1">Offer Comparison</h1>
-            <p className="text-muted-foreground font-body text-sm">{sampleProperty.address}</p>
+            <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Comparison</p>
+            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">{sampleProperty.address}</h1>
           </div>
           <div className="flex items-center gap-2">
-            <ArrowUpDown className="w-4 h-4 text-muted-foreground" />
+            <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />
             <div className="flex gap-1.5 flex-wrap">
               {sortOptions.map((s) => (
                 <button
                   key={s.key}
                   onClick={() => setSortBy(s.key)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium font-body transition-colors ${
-                    sortBy === s.key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
+                  className={`px-3 py-1.5 rounded-sm text-[11px] font-medium font-body transition-colors tracking-wide ${
+                    sortBy === s.key ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   {s.label}
@@ -72,10 +72,10 @@ export default function Comparison() {
           <table className="w-full text-sm font-body">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left p-4 text-xs font-medium text-muted-foreground w-40">Term</th>
+                <th className="text-left p-4 text-[10px] font-medium text-muted-foreground w-40 tracking-[0.1em] uppercase">Term</th>
                 {sorted.map((o) => (
-                  <th key={o.id} className="text-left p-4 min-w-[180px]">
-                    <p className="font-semibold text-foreground">{o.buyerName}</p>
+                  <th key={o.id} className="text-left p-4 min-w-[180px] font-normal">
+                    <p className="font-medium text-foreground text-[13px]">{o.buyerName}</p>
                     <div className="flex gap-1 mt-1">
                       {o.labels.map(l => <span key={l} className="badge-gold text-xs">{l}</span>)}
                     </div>
@@ -86,9 +86,9 @@ export default function Comparison() {
             <tbody>
               {rows.map((row, i) => (
                 <tr key={row.label} className={i % 2 === 0 ? 'bg-muted/20' : ''}>
-                  <td className="p-4 text-xs font-medium text-muted-foreground">{row.label}</td>
+                  <td className="p-4 text-[11px] font-medium text-muted-foreground tracking-wide">{row.label}</td>
                   {sorted.map((o) => (
-                    <td key={o.id} className="p-4 text-sm">{row.get(o)}</td>
+                    <td key={o.id} className="p-4 text-[13px]">{row.get(o)}</td>
                   ))}
                 </tr>
               ))}
@@ -98,8 +98,8 @@ export default function Comparison() {
 
         {/* Seller Summary */}
         <div className="card-elevated p-6">
-          <h3 className="heading-display text-lg font-semibold mb-3">Seller Summary</h3>
-          <p className="text-sm text-muted-foreground font-body mb-3">{sampleProperty.sellerNotes}</p>
+          <h3 className="heading-display text-xl mb-4">Seller Summary</h3>
+          <p className="text-[13px] text-muted-foreground font-body mb-4 leading-relaxed">{sampleProperty.sellerNotes}</p>
           <div className="flex flex-wrap gap-2">
             {sampleProperty.sellerGoals.map(g => (
               <span key={g} className="badge-gold">{g}</span>
