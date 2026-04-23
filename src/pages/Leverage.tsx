@@ -1,7 +1,11 @@
 import AppLayout from '@/components/AppLayout';
-import { ArrowRight, Home, Clock, DollarSign, ShieldCheck, FileX, Wrench, BadgeCheck, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowRight, Home, Clock, DollarSign, ShieldCheck, FileX, Wrench, BadgeCheck, TrendingDown, ChevronDown, ChevronUp, Brain, Loader2, RefreshCw, Sparkles, Zap, Target } from 'lucide-react';
 import { useState } from 'react';
 import { sampleProperty, formatCurrency } from '@/data/sampleData';
+import { useToast } from '@/hooks/use-toast';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 /* ── Types ── */
 type Impact = 'critical' | 'high' | 'moderate';
@@ -145,6 +149,57 @@ const buyerName = (id: string) => sampleProperty.offers.find(o => o.id === id)?.
 /* ── Component ── */
 export default function Leverage() {
   const [expanded, setExpanded] = useState<number | null>(0);
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const { toast } = useToast();
+
+  const runAiLeverage = async () => {
+    setAiLoading(true);
+    try {
+      const offersPayload = sampleProperty.offers.map(o => ({
+        buyer: o.buyerName,
+        agent: o.agentName,
+        price: o.offerPrice,
+        financing: o.financingType,
+        down_payment_pct: o.downPaymentPercent,
+        earnest_money: o.earnestMoney,
+        contingencies: o.contingencies,
+        inspection_period: o.inspectionPeriod,
+        appraisal_terms: o.appraisalTerms,
+        close_days: o.closeDays,
+        leaseback: o.leasebackRequest,
+        concessions: o.concessions,
+        proof_of_funds: o.proofOfFunds,
+        pre_approval: o.preApproval,
+        close_probability: o.scores.closeProbability,
+        financial_confidence: o.scores.financialConfidence,
+        contingency_risk: o.scores.contingencyRisk,
+      }));
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-leverage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(SUPABASE_KEY ? { Authorization: `Bearer ${SUPABASE_KEY}` } : {}),
+        },
+        body: JSON.stringify({
+          offers: offersPayload,
+          property: { address: sampleProperty.address, listingPrice: sampleProperty.listingPrice },
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || data?.error) {
+        toast({ title: 'AI Analysis Error', description: data?.error || 'Request failed', variant: 'destructive' });
+      } else if (data?.analysis) {
+        setAiAnalysis(data.analysis);
+      }
+    } catch (e: any) {
+      toast({ title: 'AI Analysis Failed', description: e.message || 'Something went wrong', variant: 'destructive' });
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   return (
     <AppLayout>
@@ -290,6 +345,122 @@ export default function Leverage() {
               </div>
             );
           })}
+        </div>
+
+        {/* AI Leverage Strategist */}
+        <div className="rounded-md border border-border/60 bg-card">
+          <div className="p-5 border-b border-border/40 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-sm bg-accent/10 flex items-center justify-center">
+                <Brain className="w-4 h-4 text-accent" strokeWidth={1.5} />
+              </div>
+              <div>
+                <p className="text-[13px] font-body font-medium text-foreground">AI Leverage Strategist</p>
+                <p className="text-[11px] text-muted-foreground font-body">Analyzes offers for high-value, low-friction negotiation terms</p>
+              </div>
+            </div>
+            <button
+              onClick={runAiLeverage}
+              disabled={aiLoading}
+              className="flex items-center gap-2 px-4 py-2 rounded-md bg-accent text-accent-foreground text-[12px] font-body font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+            >
+              {aiLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {aiLoading ? 'Analyzing…' : aiAnalysis ? 'Re-analyze' : 'Get AI Analysis'}
+            </button>
+          </div>
+
+          {aiAnalysis && (
+            <div className="p-5 space-y-5">
+              {/* Easiest Wins */}
+              {aiAnalysis.easiest_wins?.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Zap className="w-4 h-4 text-success" strokeWidth={1.5} />
+                    <p className="text-[10px] tracking-[0.15em] uppercase text-success font-body font-medium">Easiest Wins</p>
+                  </div>
+                  <div className="space-y-2">
+                    {aiAnalysis.easiest_wins.map((win: string, i: number) => (
+                      <div key={i} className="rounded-md border border-success/20 bg-success/[0.03] p-3">
+                        <p className="text-[12px] text-foreground font-body leading-relaxed">{win}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Highest Impact Terms */}
+              {aiAnalysis.highest_impact_terms?.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Target className="w-4 h-4 text-accent" strokeWidth={1.5} />
+                    <p className="text-[10px] tracking-[0.15em] uppercase text-accent font-body font-medium">Highest Impact Terms</p>
+                  </div>
+                  <div className="space-y-2">
+                    {aiAnalysis.highest_impact_terms.map((term: string, i: number) => (
+                      <div key={i} className="rounded-md border border-accent/20 bg-accent/[0.03] p-3">
+                        <p className="text-[12px] text-foreground font-body leading-relaxed">{term}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* AI Leverage Suggestions */}
+              {aiAnalysis.leverage_suggestions?.length > 0 && (
+                <div>
+                  <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-3">AI-Generated Leverage Points</p>
+                  <div className="space-y-2">
+                    {aiAnalysis.leverage_suggestions.map((s: any, i: number) => {
+                      const impactColor = s.seller_impact === 'high' ? 'text-accent' : s.seller_impact === 'medium' ? 'text-success' : 'text-muted-foreground';
+                      const frictionColor = s.buyer_friction === 'low' ? 'text-success' : s.buyer_friction === 'medium' ? 'text-warning' : 'text-destructive';
+                      return (
+                        <div key={i} className="rounded-md border border-border/40 p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium">{s.category}</span>
+                                <span className={`text-[10px] font-body font-medium ${impactColor}`}>Impact: {s.seller_impact}</span>
+                                <span className={`text-[10px] font-body font-medium ${frictionColor}`}>Friction: {s.buyer_friction}</span>
+                              </div>
+                              <p className="text-[13px] font-body font-medium text-foreground">{s.term}</p>
+                              <p className="text-[12px] text-muted-foreground font-body mt-1 leading-relaxed">{s.headline}</p>
+                            </div>
+                          </div>
+                          <p className="text-[12px] text-muted-foreground font-body leading-relaxed">{s.reasoning}</p>
+                          <div className="grid sm:grid-cols-2 gap-2">
+                            <div className="rounded-sm border border-success/20 bg-success/[0.03] p-2.5">
+                              <p className="text-[9px] tracking-[0.1em] uppercase text-success font-body font-medium mb-1">Seller Gets</p>
+                              <p className="text-[11px] font-body text-foreground">{s.seller_gets}</p>
+                            </div>
+                            <div className="rounded-sm border border-border/50 bg-muted/20 p-2.5">
+                              <p className="text-[9px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium mb-1">Buyer Gives</p>
+                              <p className="text-[11px] font-body text-foreground">{s.buyer_gives}</p>
+                            </div>
+                          </div>
+                          {s.applicable_buyers?.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {s.applicable_buyers.map((b: string, j: number) => (
+                                <span key={j} className="badge-info">{b}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              {aiAnalysis.notes && (
+                <div className="rounded-md bg-muted/50 p-3">
+                  <p className="text-[11px] text-muted-foreground font-body italic leading-relaxed">
+                    💡 {aiAnalysis.notes}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </AppLayout>
