@@ -264,7 +264,9 @@ export default function Comparison() {
               </div>
               {sorted.map((o) => {
                 const best = o.closeDays === minClose;
-                const pct = ((45 - o.closeDays) / (45 - 14)) * 100;
+                const maxC = bestVal(offers, x => x.closeDays, 'max');
+                const range = Math.max(maxC - minClose, 1);
+                const pct = ((maxC - o.closeDays) / range) * 100;
                 return (
                   <div key={o.id} className={`flex-1 min-w-[160px] p-4 border-l border-border/40 ${best ? 'bg-info/[0.03]' : ''}`}>
                     <div className="flex items-center gap-2">
@@ -373,7 +375,7 @@ export default function Comparison() {
                 <div key={o.id} className="flex-1 min-w-[160px] p-4 border-l border-border/40">
                   <p className="text-[13px] font-medium font-body text-foreground">{o.buyerName}</p>
                   <div className="flex gap-1 mt-1 flex-wrap">
-                    {o.labels.map(l => <span key={l} className="badge-gold">{l}</span>)}
+                    {(badgeMap[o.id] ?? []).map(l => <span key={l} className="badge-gold">{l}</span>)}
                   </div>
                 </div>
               ))}
