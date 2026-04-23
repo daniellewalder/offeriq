@@ -528,6 +528,8 @@ export default function SellerPriorities() {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
     </AppLayout>
   );
