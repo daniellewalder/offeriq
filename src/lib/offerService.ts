@@ -410,3 +410,50 @@ export async function fetchLatestLeverageSuggestions(dealAnalysisId: string) {
   if (error) throw error;
   return data;
 }
+
+// ─── Counter Strategies ───
+
+import type { CounterStrategy } from "@/lib/counterStrategyEngine";
+
+export async function saveCounterStrategies(
+  dealAnalysisId: string,
+  strategies: CounterStrategy[],
+) {
+  const { data: latest } = await supabase
+    .from("counter_strategies")
+    .select("version")
+    .eq("deal_analysis_id", dealAnalysisId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const nextVersion = (latest?.version ?? 0) + 1;
+
+  const rows = strategies.map((s) => ({
+    deal_analysis_id: dealAnalysisId,
+    version: nextVersion,
+    strategy_type: s.strategy_type,
+    target_buyer: s.target_buyer,
+    counter_price: s.counter_price,
+    acceptance_likelihood: s.acceptance_likelihood,
+    rationale: s.rationale,
+    risk: s.risk,
+    terms: s as any,
+  }));
+
+  const { error } = await supabase.from("counter_strategies").insert(rows);
+  if (error) throw error;
+  return nextVersion;
+}
+
+export async function fetchLatestCounterStrategies(dealAnalysisId: string) {
+  const { data, error } = await supabase
+    .from("counter_strategies")
+    .select("*")
+    .eq("deal_analysis_id", dealAnalysisId)
+    .order("version", { ascending: false });
+  if (error) throw error;
+  if (!data || data.length === 0) return null;
+  const latestVersion = data[0].version;
+  return data.filter((r: any) => r.version === latestVersion);
+}
