@@ -7,7 +7,7 @@ export default function Index() {
       {/* Nav */}
       <nav className="flex items-center justify-between px-6 lg:px-20 py-6">
         <div className="flex items-center gap-2">
-          <span className="heading-display text-2xl text-foreground">CloseIQ</span>
+          <span className="heading-display text-2xl text-foreground">OfferIQ</span>
         </div>
         <div className="flex items-center gap-4">
           <Link to="/dashboard" className="text-[13px] text-muted-foreground hover:text-foreground transition-colors font-body tracking-wide">
@@ -73,7 +73,7 @@ export default function Index() {
 
       {/* Footer */}
       <footer className="px-6 lg:px-20 py-12 text-center">
-        <p className="text-[11px] text-muted-foreground font-body tracking-wide">© 2026 CloseIQ</p>
+        <p className="text-[11px] text-muted-foreground font-body tracking-wide">© 2026 OfferIQ</p>
       </footer>
     </div>
   );
