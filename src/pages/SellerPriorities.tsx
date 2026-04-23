@@ -188,7 +188,7 @@ export default function SellerPriorities() {
         body: JSON.stringify({
           offers: offersPayload,
           weights,
-          property: { address: sampleProperty.address, listingPrice: sampleProperty.listingPrice },
+          property: { address: '', listingPrice: 0 },
         }),
       });
 
@@ -215,10 +215,9 @@ export default function SellerPriorities() {
             <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Seller Priority Mapping</h1>
             <p className="text-[13px] text-muted-foreground font-body mt-2">
               Adjust what matters most — the ranking updates instantly.
-              {usingDemo && <span className="ml-2 text-accent">· Demo data</span>}
             </p>
           </div>
-          {!usingDemo && (
+          {offers.length > 0 && (
             <div className="flex items-center gap-2 text-[11px] font-body">
               {saveStatus === 'saving' && <><Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" /><span className="text-muted-foreground">Saving…</span></>}
               {saveStatus === 'saved' && lastSavedAt && <><CheckCircle2 className="w-3.5 h-3.5 text-success" /><span className="text-success">Saved {lastSavedAt}</span></>}
@@ -228,6 +227,15 @@ export default function SellerPriorities() {
           )}
         </div>
 
+        {!topOffer && (
+          <EmptyDealState
+            title="No offers to rank yet"
+            message="Seller priority weights re-rank your real offers as you tweak them. Add offers to a deal to see live rankings shift in this view."
+          />
+        )}
+
+        {topOffer && (
+        <>
         {/* ── Top Recommendation Banner ── */}
         <div className={`rounded-md border p-6 transition-all duration-500 ${topChanged ? 'border-accent bg-accent/[0.05]' : 'border-border/60 bg-card'}`}>
           <div className="flex items-center gap-3 mb-1">
