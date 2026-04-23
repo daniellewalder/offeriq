@@ -2,8 +2,10 @@ import { useState, useMemo, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { sampleProperty, formatCurrency } from '@/data/sampleData';
 import { Crown, DollarSign, ShieldCheck, FileX, Zap, Home, Wrench, TrendingUp, ArrowRight, Brain, AlertTriangle, Target, Loader2, RefreshCw } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 type PriorityKey = 'price' | 'certainty' | 'contingencies' | 'speed' | 'leaseback' | 'repair' | 'financial';
 
@@ -93,17 +95,22 @@ export default function SellerPriorities() {
         contingency_risk: o.scores.contingencyRisk,
       }));
 
-      const { data, error } = await supabase.functions.invoke('rank-offers', {
-        body: {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/rank-offers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(SUPABASE_KEY ? { Authorization: `Bearer ${SUPABASE_KEY}` } : {}),
+        },
+        body: JSON.stringify({
           offers: offersPayload,
           weights,
           property: { address: sampleProperty.address, listingPrice: sampleProperty.listingPrice },
-        },
+        }),
       });
 
-      if (error) throw error;
-      if (data?.error) {
-        toast({ title: 'AI Analysis Error', description: data.error, variant: 'destructive' });
+      const data = await response.json();
+      if (!response.ok || data?.error) {
+        toast({ title: 'AI Analysis Error', description: data?.error || 'Request failed', variant: 'destructive' });
       } else if (data?.analysis) {
         setAiAnalysis(data.analysis);
       }
