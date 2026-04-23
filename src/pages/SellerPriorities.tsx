@@ -527,6 +527,7 @@ export default function SellerPriorities() {
               )}
             </div>
           </div>
+        </div>
         </>
         )}
       </div>
