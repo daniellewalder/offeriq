@@ -429,28 +429,26 @@ function PickCard({
   mutedNote?: string;
 }) {
   return (
-    <div className={`card-elevated p-5 ${muted ? "opacity-80" : ""}`}>
-      <div className="flex items-center gap-3 mb-3">
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${iconBg}`}>
+    <div className={`card-paper p-6 h-full flex flex-col ${muted ? "opacity-70" : ""}`}>
+      <div className="flex items-start justify-between mb-5">
+        <p className="label-key">{label}</p>
+        <div className={`w-9 h-9 rounded-md flex items-center justify-center ${iconBg}`}>
           {icon}
         </div>
-        <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-body">
-            {label}
-          </p>
-          <p className="text-[14px] font-semibold font-body text-foreground truncate">
-            {pick.buyer_name}
-          </p>
-        </div>
       </div>
-      <p className="text-[12.5px] text-muted-foreground font-body leading-relaxed">
+      <h4 className="heading-display text-xl text-foreground mb-1 leading-tight">{pick.buyer_name}</h4>
+      <p className="text-[13px] text-muted-foreground font-body tabular-nums mb-4">
+        {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(pick.offer_price)}
+      </p>
+      <div className="rule-hairline mb-4" />
+      <p className="text-[12.5px] text-foreground/75 font-body leading-[1.7] flex-1">
         {muted && mutedNote ? mutedNote : pick.explanation}
       </p>
       {!muted && pick.proof_points.length > 0 && (
-        <ul className="mt-3 space-y-1">
+        <ul className="mt-4 pt-4 border-t border-border/60 space-y-1.5">
           {pick.proof_points.slice(0, 3).map((p, i) => (
-            <li key={i} className="text-[11.5px] text-foreground/70 font-body flex items-start gap-1.5">
-              <span className="text-success mt-1">·</span>
+            <li key={i} className="text-[11.5px] text-foreground/65 font-body flex items-start gap-2">
+              <span className="w-1 h-1 rounded-full bg-accent mt-[7px] flex-shrink-0" />
               <span>{p}</span>
             </li>
           ))}
