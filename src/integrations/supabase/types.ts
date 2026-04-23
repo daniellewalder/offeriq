@@ -518,6 +518,48 @@ export type Database = {
           },
         ]
       }
+      shared_portals: {
+        Row: {
+          access_code_hash: string
+          created_at: string
+          deal_analysis_id: string
+          expires_at: string | null
+          id: string
+          last_accessed_at: string | null
+          revoked_at: string | null
+          title: string | null
+          token: string
+          user_id: string
+          view_count: number
+        }
+        Insert: {
+          access_code_hash: string
+          created_at?: string
+          deal_analysis_id: string
+          expires_at?: string | null
+          id?: string
+          last_accessed_at?: string | null
+          revoked_at?: string | null
+          title?: string | null
+          token: string
+          user_id: string
+          view_count?: number
+        }
+        Update: {
+          access_code_hash?: string
+          created_at?: string
+          deal_analysis_id?: string
+          expires_at?: string | null
+          id?: string
+          last_accessed_at?: string | null
+          revoked_at?: string | null
+          title?: string | null
+          token?: string
+          user_id?: string
+          view_count?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
