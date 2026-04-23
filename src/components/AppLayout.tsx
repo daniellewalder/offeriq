@@ -44,21 +44,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-card border-r border-border flex flex-col transition-transform duration-300 ${
+        className={`fixed lg:static inset-y-0 left-0 z-50 w-60 bg-sidebar border-r border-sidebar-border flex flex-col transition-transform duration-300 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
-        <div className="p-6 border-b border-border">
+        <div className="px-6 py-7 border-b border-sidebar-border">
           <Link to="/dashboard" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm font-body">CQ</span>
-            </div>
-            <span className="heading-display text-xl font-semibold text-foreground">CloseIQ</span>
+            <span className="heading-display text-xl text-sidebar-primary">CloseIQ</span>
           </Link>
-          <p className="text-xs text-muted-foreground mt-1 font-body">Offer Intelligence</p>
+          <p className="text-[10px] tracking-[0.15em] uppercase text-sidebar-foreground/50 mt-1.5 font-body">Offer Intelligence</p>
         </div>
 
-        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = location.pathname === item.to;
             return (
@@ -66,25 +63,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 key={item.to}
                 to={item.to}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors font-body ${
+                className={`flex items-center gap-3 px-3 py-2 rounded-sm text-[13px] transition-colors font-body ${
                   isActive
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                    : 'text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/50'
                 }`}
               >
-                <item.icon className="w-4 h-4 flex-shrink-0" />
+                <item.icon className="w-4 h-4 flex-shrink-0" strokeWidth={1.5} />
                 {item.label}
               </Link>
             );
           })}
         </nav>
 
-        <div className="p-3 border-t border-border">
+        <div className="p-3 border-t border-sidebar-border">
           <Link
             to="/"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors font-body"
+            className="flex items-center gap-3 px-3 py-2 rounded-sm text-[13px] text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent/50 transition-colors font-body"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-4 h-4" strokeWidth={1.5} />
             Sign Out
           </Link>
         </div>
@@ -92,19 +89,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-14 border-b border-border flex items-center px-4 lg:px-8 bg-card/50 backdrop-blur-sm sticky top-0 z-30">
+        <header className="h-12 border-b border-border flex items-center px-4 lg:px-10 bg-background/80 backdrop-blur-sm sticky top-0 z-30">
           <button className="lg:hidden mr-3 p-1.5 rounded-lg hover:bg-muted" onClick={() => setSidebarOpen(true)}>
             {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <div className="flex-1" />
           <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground font-body">1247 Stone Canyon Rd</span>
-            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-              <span className="text-xs font-medium text-muted-foreground">JW</span>
+            <span className="text-[12px] text-muted-foreground font-body tracking-wide">1247 Stone Canyon Rd</span>
+            <div className="w-7 h-7 rounded-full bg-foreground flex items-center justify-center">
+              <span className="text-[10px] font-medium text-background">JW</span>
             </div>
           </div>
         </header>
-        <main className="flex-1 p-4 lg:p-8 overflow-y-auto">{children}</main>
+        <main className="flex-1 p-5 lg:p-10 overflow-y-auto">{children}</main>
       </div>
     </div>
   );

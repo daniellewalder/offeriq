@@ -35,14 +35,14 @@ export default function SellerPriorities() {
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
         <div>
-          <h1 className="heading-display text-2xl lg:text-3xl font-semibold mb-1">Seller Priority Mapping</h1>
-          <p className="text-muted-foreground font-body text-sm">Adjust what matters most — rankings update in real time.</p>
+          <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Priorities</p>
+          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Seller Priorities</h1>
         </div>
 
         <div className="grid lg:grid-cols-5 gap-6">
           {/* Sliders */}
           <div className="lg:col-span-2 card-elevated p-6 space-y-5">
-            <h3 className="heading-display text-lg font-semibold">What Matters Most?</h3>
+            <h3 className="heading-display text-xl">What Matters Most?</h3>
             {priorities.map((p) => (
               <div key={p.key}>
                 <div className="flex items-center justify-between mb-1.5">
@@ -64,19 +64,19 @@ export default function SellerPriorities() {
 
           {/* Rankings */}
           <div className="lg:col-span-3 space-y-3">
-            <h3 className="heading-display text-lg font-semibold">Live Ranking</h3>
+            <h3 className="heading-display text-xl">Live Ranking</h3>
             {ranked.map((o, i) => (
-              <div key={o.id} className={`card-elevated p-5 flex items-center gap-4 transition-all duration-300 ${i === 0 ? 'ring-2 ring-gold/30' : ''}`}>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm font-body ${i === 0 ? 'bg-gold text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>
+              <div key={o.id} className={`card-elevated p-5 flex items-center gap-4 transition-all duration-300 ${i === 0 ? 'border-accent/40' : ''}`}>
+                <div className={`w-9 h-9 rounded-sm flex items-center justify-center font-medium text-sm font-body ${i === 0 ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>
                   #{i + 1}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold font-body">{o.buyerName}</p>
-                  <p className="text-xs text-muted-foreground font-body">{formatCurrency(o.offerPrice)} · {o.closeTimeline} · {o.financingType}</p>
+                  <p className="text-[13px] font-medium font-body">{o.buyerName}</p>
+                  <p className="text-[11px] text-muted-foreground font-body">{formatCurrency(o.offerPrice)} · {o.closeTimeline} · {o.financingType}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-semibold font-body">{o.compositeScore}</p>
-                  <p className="text-xs text-muted-foreground font-body">score</p>
+                  <p className="text-xl font-light font-display">{o.compositeScore}</p>
+                  <p className="text-[10px] text-muted-foreground font-body uppercase tracking-wide">score</p>
                 </div>
                 <div className="flex gap-1">
                   {o.labels.map(l => <span key={l} className="badge-gold text-xs">{l}</span>)}

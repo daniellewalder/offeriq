@@ -51,21 +51,21 @@ export default function Leverage() {
   return (
     <AppLayout>
       <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-        <div>
-          <h1 className="heading-display text-2xl lg:text-3xl font-semibold mb-1">Negotiation Leverage</h1>
-          <p className="text-muted-foreground font-body text-sm">AI-identified terms that create seller advantage with minimal buyer friction.</p>
+        <div className="mb-2">
+          <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Negotiation</p>
+          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Leverage Points</h1>
         </div>
 
         <div className="space-y-4">
           {leveragePoints.map((lp, i) => (
-            <div key={i} className="card-elevated p-6 space-y-3">
+            <div key={i} className="card-elevated p-6 lg:p-7 space-y-4">
               <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-lg bg-gold-light flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <Lightbulb className="w-4 h-4 text-gold" />
+                <div className="w-8 h-8 rounded-sm bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Lightbulb className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-sm font-semibold font-body mb-1">{lp.title}</h3>
-                  <p className="text-sm text-muted-foreground font-body leading-relaxed">{lp.description}</p>
+                  <h3 className="text-[13px] font-medium font-body mb-1.5">{lp.title}</h3>
+                  <p className="text-[13px] text-muted-foreground font-body leading-relaxed">{lp.description}</p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2 ml-12">

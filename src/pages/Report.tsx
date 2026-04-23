@@ -14,10 +14,11 @@ export default function Report() {
       <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
         <div className="flex items-end justify-between">
           <div>
-            <h1 className="heading-display text-2xl lg:text-3xl font-semibold mb-1">Recommendation Report</h1>
-            <p className="text-muted-foreground font-body text-sm">{sampleProperty.address} · {sampleProperty.offers.length} offers analyzed</p>
+            <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Report</p>
+            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Recommendation Report</h1>
+            <p className="text-[13px] text-muted-foreground font-body mt-2">{sampleProperty.address} · {sampleProperty.offers.length} offers analyzed</p>
           </div>
-          <button className="hidden sm:flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium font-body hover:bg-muted transition-colors">
+          <button className="hidden sm:flex items-center gap-2 px-4 py-2 border border-border rounded-sm text-[12px] font-medium font-body hover:bg-muted/50 transition-colors tracking-wide">
             <Download className="w-4 h-4" /> Export PDF
           </button>
         </div>

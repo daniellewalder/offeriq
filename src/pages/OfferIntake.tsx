@@ -10,8 +10,9 @@ export default function OfferIntake() {
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
         <div>
-          <h1 className="heading-display text-2xl lg:text-3xl font-semibold mb-1">Offer Intake & Extraction</h1>
-          <p className="text-muted-foreground font-body text-sm">{sampleProperty.address} — {sampleProperty.offers.length} offers received</p>
+          <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Intake</p>
+          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Offer Extraction</h1>
+          <p className="text-[13px] text-muted-foreground font-body mt-2">{sampleProperty.address} — {sampleProperty.offers.length} offers received</p>
         </div>
 
         {sampleProperty.offers.map((offer) => {

@@ -30,8 +30,8 @@ export default function DeltaView() {
     <AppLayout>
       <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
         <div>
-          <h1 className="heading-display text-2xl lg:text-3xl font-semibold mb-1">Negotiation Delta View</h1>
-          <p className="text-muted-foreground font-body text-sm">Visualize the gap between each offer and the seller's desired outcome.</p>
+          <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Delta Analysis</p>
+          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Offer vs. Seller Target</h1>
         </div>
 
         {/* Offer selector */}
@@ -40,8 +40,8 @@ export default function DeltaView() {
             <button
               key={o.id}
               onClick={() => setSelectedOffer(o.id)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium font-body transition-colors ${
-                selectedOffer === o.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
+              className={`px-4 py-2 rounded-sm text-[12px] font-medium font-body transition-colors tracking-wide ${
+                selectedOffer === o.id ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground'
               }`}
             >
               {o.buyerName}

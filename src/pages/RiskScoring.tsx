@@ -57,17 +57,17 @@ export default function RiskScoring() {
   return (
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
-        <div>
-          <h1 className="heading-display text-2xl lg:text-3xl font-semibold mb-1">Risk & Quality Scoring</h1>
-          <p className="text-muted-foreground font-body text-sm">Comprehensive scoring with plain-language explanations for each offer.</p>
+        <div className="mb-2">
+          <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Risk Analysis</p>
+          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Quality & Risk Scoring</h1>
         </div>
 
         {sampleProperty.offers.map((offer) => (
-          <div key={offer.id} className="card-elevated p-6 space-y-5">
+          <div key={offer.id} className="card-elevated p-6 lg:p-8 space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-base font-semibold font-body">{offer.buyerName}</h3>
-                <p className="text-xs text-muted-foreground font-body">{offer.agentName} · {offer.agentBrokerage}</p>
+                <h3 className="heading-display text-xl">{offer.buyerName}</h3>
+                <p className="text-[11px] text-muted-foreground font-body mt-1 tracking-wide">{offer.agentName} · {offer.agentBrokerage}</p>
               </div>
               <div className="flex gap-1.5">
                 {offer.labels.map(l => <span key={l} className="badge-gold text-xs">{l}</span>)}
@@ -84,14 +84,14 @@ export default function RiskScoring() {
                 const explanation = scoreExplanations[offer.id]?.[s.key] ?? '';
 
                 return (
-                  <div key={s.key} className={`p-4 rounded-xl border ${bgClass}`}>
+                  <div key={s.key} className={`p-4 rounded-md border ${bgClass}`}>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-medium text-muted-foreground font-body">{s.label}</span>
-                      <span className={`text-lg font-semibold font-body ${colorClass}`}>
+                      <span className="text-[10px] font-medium text-muted-foreground font-body tracking-[0.1em] uppercase">{s.label}</span>
+                      <span className={`text-lg font-light font-display ${colorClass}`}>
                         {s.isRisk ? `${value}%` : `${value}/100`}
                       </span>
                     </div>
-                    <p className="text-xs text-muted-foreground font-body leading-relaxed">{explanation}</p>
+                    <p className="text-[12px] text-muted-foreground font-body leading-relaxed">{explanation}</p>
                   </div>
                 );
               })}

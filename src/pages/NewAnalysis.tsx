@@ -23,10 +23,10 @@ export default function NewAnalysis() {
 
   return (
     <AppLayout>
-      <div className="max-w-3xl mx-auto space-y-8 animate-fade-in">
+      <div className="max-w-3xl mx-auto space-y-10 animate-fade-in">
         <div>
-          <h1 className="heading-display text-2xl lg:text-3xl font-semibold mb-1">New Deal Analysis</h1>
-          <p className="text-muted-foreground font-body text-sm">Set up a new property and upload offer packages.</p>
+          <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">New Analysis</p>
+          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Upload Offers</h1>
         </div>
 
         {/* Property Details */}

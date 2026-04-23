@@ -44,25 +44,25 @@ export default function CounterStrategy() {
   return (
     <AppLayout>
       <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
-        <div>
-          <h1 className="heading-display text-2xl lg:text-3xl font-semibold mb-1">Counter Strategy Builder</h1>
-          <p className="text-muted-foreground font-body text-sm">Three AI-generated counteroffer strategies based on seller priorities and offer analysis.</p>
+        <div className="mb-2">
+          <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Strategy</p>
+          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Counter Strategies</h1>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-5">
+        <div className="grid lg:grid-cols-3 gap-4">
           {strategies.map((s, i) => (
-            <div key={i} className={`card-elevated p-6 space-y-4 ${i === 2 ? 'ring-2 ring-gold/30' : ''}`}>
+            <div key={i} className={`card-elevated p-6 lg:p-7 space-y-5 ${i === 2 ? 'border-accent/40' : ''}`}>
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${s.color}`}>
-                  <s.icon className="w-5 h-5" />
+                <div className={`w-9 h-9 rounded-sm flex items-center justify-center ${s.color}`}>
+                  <s.icon className="w-4 h-4" strokeWidth={1.5} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold font-body">{s.title}</h3>
-                  {i === 2 && <span className="badge-gold text-xs">Recommended</span>}
+                  <h3 className="text-[13px] font-medium font-body">{s.title}</h3>
+                  {i === 2 && <span className="badge-gold">Recommended</span>}
                 </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-3.5">
                 {[
                   ['Counter Price', s.counterPrice],
                   ['Timeline', s.timeline],
@@ -72,22 +72,22 @@ export default function CounterStrategy() {
                   ['Doc Requests', s.docRequests],
                 ].map(([label, value]) => (
                   <div key={label as string}>
-                    <p className="text-xs text-muted-foreground font-body">{label}</p>
-                    <p className="text-sm font-medium font-body">{value}</p>
+                    <p className="text-[10px] text-muted-foreground font-body tracking-[0.1em] uppercase mb-0.5">{label}</p>
+                    <p className="text-[13px] font-body">{value}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="border-t border-border pt-3">
-                <p className="text-xs text-muted-foreground font-body italic leading-relaxed">{s.rationale}</p>
+              <div className="border-t border-border/60 pt-4">
+                <p className="text-[12px] text-muted-foreground font-body leading-relaxed italic">{s.rationale}</p>
               </div>
 
               <div className="flex gap-2 pt-1">
-                <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium font-body hover:opacity-90 transition-opacity">
-                  <RefreshCw className="w-3.5 h-3.5" /> Revise
+                <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-foreground text-background rounded-sm text-[11px] font-medium font-body hover:opacity-90 transition-opacity tracking-wide">
+                  <RefreshCw className="w-3 h-3" /> Revise
                 </button>
-                <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-border rounded-lg text-xs font-medium font-body hover:bg-muted transition-colors">
-                  <FileText className="w-3.5 h-3.5" /> Summary
+                <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-border rounded-sm text-[11px] font-medium font-body hover:bg-muted/50 transition-colors tracking-wide">
+                  <FileText className="w-3 h-3" /> Summary
                 </button>
               </div>
             </div>
