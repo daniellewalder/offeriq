@@ -65,7 +65,7 @@ export const sampleProperty: Property = {
   offersCount: 5,
   lastUpdated: '2 hours ago',
   topRecommendation: 'Offer B — Best Balance',
-  sellerNotes: 'The seller wants to net as much as possible but isn\'t going to gamble on a deal that might fall apart. They\'re comfortable with a 30-day close and would consider a short leaseback if it helps the deal. They don\'t want to get dragged into repair negotiations — the property is well-maintained and they expect offers to reflect that.',
+  sellerNotes: "The seller wants to net as much as possible but isn't going to gamble on a deal that might fall apart. They're comfortable with a 30-day close and would consider a short leaseback if it helps the deal. They don't want to get dragged into repair negotiations — the property is well-maintained and they expect offers to reflect that.",
   sellerGoals: ['Maximize net proceeds', 'Close within 35 days', 'Avoid repair negotiations', 'Short leaseback if needed'],
   offers: [
     {
@@ -88,7 +88,7 @@ export const sampleProperty: Property = {
       proofOfFunds: true,
       preApproval: false,
       completeness: 95,
-      specialNotes: 'Relocating from Tokyo on a tight timeline — this buyer needs a house, not just wants one. Represented by one of the top luxury agents in LA, which tells you they\'re getting good advice. Expect a fast, clean close if terms are right.',
+      specialNotes: "Relocating from Tokyo on a tight timeline — this buyer needs a house, not just wants one. Represented by one of the top luxury agents in LA, which tells you they're getting good advice. Expect a fast, clean close if terms are right.",
       labels: ['Highest', 'Fastest'],
       documents: [
         { name: 'Purchase Agreement', category: 'Purchase Agreement', status: 'verified', confidence: 98 },
@@ -117,7 +117,7 @@ export const sampleProperty: Property = {
       proofOfFunds: true,
       preApproval: true,
       completeness: 100,
-      specialNotes: 'The best-prepared offer in the group — their agent clearly knows what listing agents look for. First Republic pre-approval, full docs, and they\'ve signaled flexibility on leaseback. Not the flashiest offer, but the one most likely to actually close without drama.',
+      specialNotes: "The best-prepared offer in the group — their agent clearly knows what listing agents look for. First Republic pre-approval, full docs, and they've signaled flexibility on leaseback. Not the flashiest offer, but the one most likely to actually close without drama.",
       labels: ['Best Balance', 'Safest'],
       documents: [
         { name: 'Purchase Agreement', category: 'Purchase Agreement', status: 'verified', confidence: 97 },
@@ -148,7 +148,7 @@ export const sampleProperty: Property = {
       proofOfFunds: true,
       preApproval: false,
       completeness: 85,
-      specialNotes: 'An entity buyer playing the speed card — 14-day close sounds great until you realize they\'re also asking for $50K in concessions on top of coming in below list. The Goldman-backed funds are real, but the LLC operating agreement needs to be reviewed before you can fully evaluate who you\'re dealing with.',
+      specialNotes: "An entity buyer playing the speed card — 14-day close sounds great until you realize they're also asking for $50K in concessions on top of coming in below list. The Goldman-backed funds are real, but the LLC operating agreement needs to be reviewed before you can fully evaluate who you're dealing with.",
       labels: ['Fastest', 'Cleanest'],
       documents: [
         { name: 'Purchase Agreement', category: 'Purchase Agreement', status: 'verified', confidence: 95 },
@@ -161,7 +161,7 @@ export const sampleProperty: Property = {
       id: 'offer-d',
       buyerName: 'Robert Ashford III',
       agentName: 'Diane Caldwell',
-      agentBrokerage: 'Sotheby\'s International Realty',
+      agentBrokerage: "Sotheby's International Realty",
       offerPrice: 9250000,
       financingType: 'Jumbo Loan (30% Down)',
       downPayment: 2775000,
@@ -177,7 +177,7 @@ export const sampleProperty: Property = {
       proofOfFunds: true,
       preApproval: true,
       completeness: 88,
-      specialNotes: 'The biggest number on the board, but also the most complicated. Three contingencies, a 45-day close, and a paid leaseback request. If you\'re comfortable with the execution risk and the extended timeline, the price is compelling. But there are a lot of ways this deal doesn\'t make it to the finish line.',
+      specialNotes: "The biggest number on the board, but also the most complicated. Three contingencies, a 45-day close, and a paid leaseback request. If you're comfortable with the execution risk and the extended timeline, the price is compelling. But there are a lot of ways this deal doesn't make it to the finish line.",
       labels: ['Highest Price'],
       documents: [
         { name: 'Purchase Agreement', category: 'Purchase Agreement', status: 'verified', confidence: 96 },
@@ -207,7 +207,7 @@ export const sampleProperty: Property = {
       proofOfFunds: true,
       preApproval: true,
       completeness: 92,
-      specialNotes: 'The sleeper in this group. The Kapoors didn\'t submit the highest price, but they volunteered appraisal gap coverage — which is the kind of move that tells you their agent understands how luxury deals fall apart. Well-capitalized through Chase Private Client, and they\'ve shown flexibility on terms. Worth a serious look.',
+      specialNotes: "The sleeper in this group. The Kapoors didn't submit the highest price, but they volunteered appraisal gap coverage — which is the kind of move that tells you their agent understands how luxury deals fall apart. Well-capitalized through Chase Private Client, and they've shown flexibility on terms. Worth a serious look.",
       labels: ['Strong Financials'],
       documents: [
         { name: 'Purchase Agreement', category: 'Purchase Agreement', status: 'verified', confidence: 97 },
