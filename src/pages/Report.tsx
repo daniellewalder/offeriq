@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AppLayout from "@/components/AppLayout";
-import { sampleProperty, formatCurrency } from "@/data/sampleData";
+import { formatCurrency } from "@/data/sampleData";
+import EmptyDealState from "@/components/EmptyDealState";
 import {
   Award,
   Shield,
@@ -68,9 +69,8 @@ const severityChip: Record<RiskCallout["severity"], string> = {
 export default function Report() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const [usingDemo, setUsingDemo] = useState(false);
-  const [propertyAddress, setPropertyAddress] = useState(sampleProperty.address);
-  const [offerCount, setOfferCount] = useState(sampleProperty.offers.length);
+  const [propertyAddress, setPropertyAddress] = useState<string>("");
+  const [offerCount, setOfferCount] = useState(0);
   const [report, setReport] = useState<RecommendationReport | null>(null);
 
   useEffect(() => {
@@ -80,15 +80,14 @@ export default function Report() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
 
-        let listingPrice = sampleProperty.listingPrice;
-        let goals = sampleProperty.sellerGoals;
-        let offers = sampleProperty.offers;
-        let address = sampleProperty.address;
+        let listingPrice = 0;
+        let goals: string[] = [];
+        let offers: any[] = [];
+        let address = "";
         let scoresMap: Record<string, ScoredOffer | undefined> = {};
         let leverage: LeverageSuggestion[] = [];
         let strategies: CounterStrategy[] = [];
         let priorities: SellerPriorityWeights | null = null;
-        let demo = true;
 
         if (user) {
           const analysis = await fetchLatestAnalysisForUser(user.id);
@@ -103,7 +102,6 @@ export default function Report() {
             const rows = await fetchOffersWithExtraction(analysis.id);
             if (rows.length > 0) {
               offers = rows.map((r) => adaptOffer(r, listingPrice));
-              demo = false;
 
               const persistedScores = await fetchLatestRiskScores(
                 offers.map((o) => o.id),
@@ -145,9 +143,14 @@ export default function Report() {
           }
         }
 
-        if (demo) {
-          for (const o of offers) scoresMap[o.id] = computeScores(o, listingPrice);
-          leverage = generateLeverage(offers, { listingPrice, goals }).suggestions;
+        if (offers.length === 0) {
+          // No real data — render empty state below.
+          if (active) {
+            setReport(null);
+            setPropertyAddress(address);
+            setOfferCount(0);
+          }
+          return;
         }
 
         if (strategies.length === 0) {
@@ -173,7 +176,6 @@ export default function Report() {
 
         if (!active) return;
         setReport(r);
-        setUsingDemo(demo);
         setPropertyAddress(address);
         setOfferCount(offers.length);
       } catch (err: any) {
