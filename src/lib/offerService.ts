@@ -175,3 +175,75 @@ export async function fetchOffersForAnalysis(dealAnalysisId: string) {
   if (error) throw error;
   return data;
 }
+
+// ─── Fetch latest deal analysis for current user ───
+
+export async function fetchLatestAnalysisForUser(userId: string) {
+  const { data, error } = await supabase
+    .from("deal_analyses")
+    .select("*, properties(*)")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+// ─── Fetch offers + their latest extracted fields for an analysis ───
+
+export interface OfferWithExtraction {
+  offer: any;
+  documents: any[];
+  fields: Record<string, { value: any; confidence: number; evidence: string | null }>;
+  missingItems: string[];
+  notableRisks: string[];
+  notableStrengths: string[];
+}
+
+export async function fetchOffersWithExtraction(
+  dealAnalysisId: string,
+): Promise<OfferWithExtraction[]> {
+  const { data: offers, error } = await supabase
+    .from("offers")
+    .select("*, documents(*)")
+    .eq("deal_analysis_id", dealAnalysisId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  if (!offers || offers.length === 0) return [];
+
+  const offerIds = offers.map((o: any) => o.id);
+  const { data: extracted } = await supabase
+    .from("extracted_offer_fields")
+    .select("*")
+    .in("offer_id", offerIds);
+
+  // Group latest version per offer, then per field
+  const latestByOffer: Record<string, Record<string, any>> = {};
+  const versionByOffer: Record<string, number> = {};
+  for (const row of extracted ?? []) {
+    const v = row.version ?? 1;
+    if ((versionByOffer[row.offer_id] ?? 0) < v) versionByOffer[row.offer_id] = v;
+  }
+  for (const row of extracted ?? []) {
+    if ((row.version ?? 1) !== versionByOffer[row.offer_id]) continue;
+    if (!latestByOffer[row.offer_id]) latestByOffer[row.offer_id] = {};
+    latestByOffer[row.offer_id][row.field_name] = {
+      value: row.field_value,
+      confidence: Number(row.confidence ?? 0),
+      evidence: row.evidence,
+    };
+  }
+
+  return offers.map((o: any) => {
+    const fields = latestByOffer[o.id] ?? {};
+    return {
+      offer: o,
+      documents: o.documents ?? [],
+      fields,
+      missingItems: (fields.missing_items?.value as string[]) ?? [],
+      notableRisks: (fields.notable_risks?.value as string[]) ?? [],
+      notableStrengths: (fields.notable_strengths?.value as string[]) ?? [],
+    };
+  });
+}
