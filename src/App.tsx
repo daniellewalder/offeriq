@@ -5,6 +5,17 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import Dashboard from "./pages/Dashboard.tsx";
+import NewAnalysis from "./pages/NewAnalysis.tsx";
+import OfferIntake from "./pages/OfferIntake.tsx";
+import Comparison from "./pages/Comparison.tsx";
+import RiskScoring from "./pages/RiskScoring.tsx";
+import SellerPriorities from "./pages/SellerPriorities.tsx";
+import Leverage from "./pages/Leverage.tsx";
+import CounterStrategy from "./pages/CounterStrategy.tsx";
+import DeltaView from "./pages/DeltaView.tsx";
+import BuyerReadiness from "./pages/BuyerReadiness.tsx";
+import Report from "./pages/Report.tsx";
 
 const queryClient = new QueryClient();
 
@@ -16,6 +27,17 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/new-analysis" element={<NewAnalysis />} />
+          <Route path="/offer-intake" element={<OfferIntake />} />
+          <Route path="/comparison" element={<Comparison />} />
+          <Route path="/risk-scoring" element={<RiskScoring />} />
+          <Route path="/priorities" element={<SellerPriorities />} />
+          <Route path="/leverage" element={<Leverage />} />
+          <Route path="/counter-strategy" element={<CounterStrategy />} />
+          <Route path="/delta-view" element={<DeltaView />} />
+          <Route path="/buyer-readiness" element={<BuyerReadiness />} />
+          <Route path="/report" element={<Report />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
