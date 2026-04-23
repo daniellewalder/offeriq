@@ -2,10 +2,13 @@ import AppLayout from '@/components/AppLayout';
 import { sampleProperty, formatCurrency } from '@/data/sampleData';
 import {
   CheckCircle, AlertCircle, Clock, FileText, ChevronDown, Upload,
-  Plus, Shield, Eye, AlertTriangle, Sparkles, X, Info
+  Plus, Shield, Eye, AlertTriangle, Sparkles, X, Info, Brain, Loader2, Target, TrendingUp, AlertOctagon
 } from 'lucide-react';
 import { useState, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 // --------------- types ---------------
 
@@ -143,6 +146,8 @@ export default function OfferIntake() {
 
   // Sample offers from existing data shown as "already extracted"
   const [expandedOffer, setExpandedOffer] = useState(sampleProperty.offers[0].id);
+  const [reviewResults, setReviewResults] = useState<Record<string, any>>({});
+  const [reviewLoading, setReviewLoading] = useState<string | null>(null);
 
   // New upload state
   const [packages, setPackages] = useState<OfferPackage[]>([]);
@@ -231,6 +236,66 @@ export default function OfferIntake() {
   };
 
   const activePkg = packages.find(p => p.id === activePackageId);
+
+  const runPackageReview = async (offerId: string) => {
+    const offer = sampleProperty.offers.find(o => o.id === offerId);
+    if (!offer) return;
+    setReviewLoading(offerId);
+    try {
+      const offerPayload = {
+        buyer: offer.buyerName,
+        agent: offer.agentName,
+        brokerage: offer.agentBrokerage,
+        price: offer.offerPrice,
+        financing: offer.financingType,
+        down_payment: offer.downPayment,
+        down_payment_pct: offer.downPaymentPercent,
+        earnest_money: offer.earnestMoney,
+        contingencies: offer.contingencies,
+        inspection_period: offer.inspectionPeriod,
+        appraisal_terms: offer.appraisalTerms,
+        close_days: offer.closeDays,
+        close_timeline: offer.closeTimeline,
+        leaseback: offer.leasebackRequest,
+        concessions: offer.concessions,
+        proof_of_funds: offer.proofOfFunds,
+        pre_approval: offer.preApproval,
+        completeness: offer.completeness,
+        special_notes: offer.specialNotes,
+        scores: offer.scores,
+      };
+      const docsPayload = offer.documents.map(d => ({
+        name: d.name,
+        category: d.category,
+        status: d.status,
+        confidence: d.confidence,
+      }));
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/review-package`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(SUPABASE_KEY ? { Authorization: `Bearer ${SUPABASE_KEY}` } : {}),
+        },
+        body: JSON.stringify({
+          offer: offerPayload,
+          documents: docsPayload,
+          property: { address: sampleProperty.address, listingPrice: sampleProperty.listingPrice },
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || data?.error) {
+        toast({ title: 'Review Error', description: data?.error || 'Request failed', variant: 'destructive' });
+      } else if (data?.analysis) {
+        setReviewResults(prev => ({ ...prev, [offerId]: data.analysis }));
+      }
+    } catch (e: any) {
+      toast({ title: 'Review Failed', description: e.message || 'Something went wrong', variant: 'destructive' });
+    } finally {
+      setReviewLoading(null);
+    }
+  };
 
   // Compute summary stats for extraction
   const getExtractionStats = (ext: ExtractionResult) => {
@@ -364,6 +429,143 @@ export default function OfferIntake() {
                           <p className="text-sm font-body">{offer.specialNotes}</p>
                         </div>
                       )}
+
+                      {/* AI Package Review */}
+                      <div className="border-t border-border pt-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <Brain className="w-4 h-4 text-accent" strokeWidth={1.5} />
+                            <h4 className="text-xs font-semibold font-body uppercase tracking-wider text-muted-foreground">AI Package Review</h4>
+                          </div>
+                          <button
+                            onClick={() => runPackageReview(offer.id)}
+                            disabled={reviewLoading === offer.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-accent-foreground text-[11px] font-body font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+                          >
+                            {reviewLoading === offer.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                            {reviewLoading === offer.id ? 'Reviewing…' : reviewResults[offer.id] ? 'Re-review' : 'Review Package'}
+                          </button>
+                        </div>
+
+                        {reviewResults[offer.id] && (() => {
+                          const review = reviewResults[offer.id];
+                          const scoreColor = review.submission_confidence_score >= 80 ? 'text-success' : review.submission_confidence_score >= 60 ? 'text-warning' : 'text-destructive';
+                          const scoreBg = review.submission_confidence_score >= 80 ? 'bg-success' : review.submission_confidence_score >= 60 ? 'bg-warning' : 'bg-destructive';
+                          return (
+                            <div className="space-y-4">
+                              {/* Score + Summary */}
+                              <div className="flex items-start gap-4 p-4 rounded-lg border border-border bg-card">
+                                <div className="text-center flex-shrink-0">
+                                  <p className={`text-3xl font-display font-semibold ${scoreColor}`}>{review.submission_confidence_score}</p>
+                                  <p className="text-[9px] tracking-[0.15em] uppercase text-muted-foreground font-body mt-0.5">Confidence</p>
+                                  <div className="w-12 h-1 bg-muted rounded-full overflow-hidden mt-1.5">
+                                    <div className={`h-full rounded-full ${scoreBg}`} style={{ width: `${review.submission_confidence_score}%` }} />
+                                  </div>
+                                </div>
+                                <div className="flex-1">
+                                  <p className="text-[12px] text-muted-foreground font-body leading-relaxed">{review.overall_summary}</p>
+                                </div>
+                              </div>
+
+                              <div className="grid sm:grid-cols-2 gap-3">
+                                {/* Missing Items */}
+                                {review.missing_items?.length > 0 && (
+                                  <div className="p-3 rounded-lg border border-destructive/20 bg-destructive/[0.03]">
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                      <AlertOctagon className="w-3.5 h-3.5 text-destructive" strokeWidth={1.5} />
+                                      <p className="text-[10px] tracking-[0.12em] uppercase text-destructive font-body font-medium">Missing Items</p>
+                                    </div>
+                                    <div className="space-y-2">
+                                      {review.missing_items.map((m: any, i: number) => (
+                                        <div key={i}>
+                                          <div className="flex items-center gap-1.5">
+                                            <p className="text-[12px] font-body font-medium text-foreground">{m.item}</p>
+                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-body font-medium ${m.urgency === 'critical' ? 'bg-destructive/10 text-destructive' : m.urgency === 'important' ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground'}`}>{m.urgency}</span>
+                                          </div>
+                                          <p className="text-[11px] text-muted-foreground font-body">{m.impact}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Weak Points */}
+                                {review.weak_points?.length > 0 && (
+                                  <div className="p-3 rounded-lg border border-warning/20 bg-warning/[0.03]">
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                      <AlertTriangle className="w-3.5 h-3.5 text-warning" strokeWidth={1.5} />
+                                      <p className="text-[10px] tracking-[0.12em] uppercase text-warning font-body font-medium">Weak Points</p>
+                                    </div>
+                                    <div className="space-y-2">
+                                      {review.weak_points.map((w: any, i: number) => (
+                                        <div key={i}>
+                                          <p className="text-[12px] font-body font-medium text-foreground">{w.issue}</p>
+                                          <p className="text-[11px] text-muted-foreground font-body">{w.why_it_matters}</p>
+                                          <p className="text-[11px] text-accent font-body mt-0.5">→ {w.fix}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Strengths */}
+                                {review.strengths?.length > 0 && (
+                                  <div className="p-3 rounded-lg border border-success/20 bg-success/[0.03]">
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                      <Shield className="w-3.5 h-3.5 text-success" strokeWidth={1.5} />
+                                      <p className="text-[10px] tracking-[0.12em] uppercase text-success font-body font-medium">Strengths</p>
+                                    </div>
+                                    <ul className="space-y-1">
+                                      {review.strengths.map((s: string, i: number) => (
+                                        <li key={i} className="text-[11px] font-body text-foreground leading-relaxed">• {s}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+
+                                {/* Stale Items */}
+                                {review.stale_items?.length > 0 && (
+                                  <div className="p-3 rounded-lg border border-border bg-muted/30">
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                      <Clock className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.5} />
+                                      <p className="text-[10px] tracking-[0.12em] uppercase text-muted-foreground font-body font-medium">Stale / Outdated</p>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      {review.stale_items.map((s: any, i: number) => (
+                                        <div key={i}>
+                                          <p className="text-[12px] font-body font-medium text-foreground">{s.item}</p>
+                                          <p className="text-[11px] text-muted-foreground font-body">{s.detail}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Recommended Improvements */}
+                              {review.recommended_improvements?.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] tracking-[0.12em] uppercase text-muted-foreground font-body font-medium mb-2">Recommended Improvements</p>
+                                  <div className="space-y-1.5">
+                                    {review.recommended_improvements.map((r: any, i: number) => (
+                                      <div key={i} className="flex items-start gap-2 p-2.5 rounded-md border border-border/40">
+                                        <Target className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${r.priority === 'high' ? 'text-accent' : r.priority === 'medium' ? 'text-info' : 'text-muted-foreground'}`} strokeWidth={1.5} />
+                                        <div>
+                                          <div className="flex items-center gap-1.5">
+                                            <p className="text-[12px] font-body font-medium text-foreground">{r.action}</p>
+                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-body font-medium ${r.priority === 'high' ? 'bg-accent/10 text-accent' : r.priority === 'medium' ? 'bg-info/10 text-info' : 'bg-muted text-muted-foreground'}`}>{r.priority}</span>
+                                          </div>
+                                          <p className="text-[11px] text-muted-foreground font-body">{r.reasoning}</p>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
                   )}
                 </div>
