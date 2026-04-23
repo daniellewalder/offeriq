@@ -50,7 +50,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div className="px-6 py-7 border-b border-sidebar-border">
           <Link to="/dashboard" className="flex items-center gap-2">
-            <span className="heading-display text-xl text-sidebar-primary">CloseIQ</span>
+            <span className="heading-display text-xl text-sidebar-primary">OfferIQ</span>
           </Link>
           <p className="text-[10px] tracking-[0.15em] uppercase text-sidebar-foreground/50 mt-1.5 font-body">Offer Intelligence</p>
         </div>
