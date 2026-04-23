@@ -1,11 +1,18 @@
+import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  FileText, Clock, Star, Target, ArrowRight, ChevronRight, TrendingUp,
+  FileText, Target, ArrowRight, ChevronRight,
   Shield, Scale, Upload, Sparkles, AlertTriangle, CheckCircle, DollarSign,
-  BarChart3, Activity,
+  BarChart3, Activity, Share2, Loader2,
 } from 'lucide-react';
 import AppLayout from '@/components/AppLayout';
-import { recentProperties, sampleProperty, formatCurrency } from '@/data/sampleData';
+import DealPortalCard from '@/components/DealPortalCard';
+import { sampleProperty, formatCurrency } from '@/data/sampleData';
+import { supabase } from '@/integrations/supabase/client';
+import {
+  fetchDealCardsForUser,
+  type DealCard,
+} from '@/lib/dealsDashboardService';
 
 const statCards = [
   { label: 'Active Analyses', value: '4', icon: FileText, delta: '+2 this week', positive: true },
@@ -33,6 +40,32 @@ const quickActions = [
 export default function Dashboard() {
   const topOffer = sampleProperty.offers[0]; // Nakamura — highest
   const safeOffer = sampleProperty.offers[1]; // Chen — safest
+
+  const [userId, setUserId] = useState<string | null>(null);
+  const [deals, setDeals] = useState<DealCard[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    setUserId(user.id);
+    try {
+      const list = await fetchDealCardsForUser(user.id, 8);
+      setDeals(list);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const sharedCount = deals.filter((d) => d.portal && !d.portal.revokedAt).length;
+  const viewedCount = deals.filter((d) => d.portal?.lastAccessedAt && !d.portal.revokedAt).length;
 
   return (
     <AppLayout>
@@ -144,39 +177,60 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {/* Recent Properties */}
-            <div className="card-elevated">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
-                <h2 className="text-[13px] font-medium font-body text-foreground">Recent Properties</h2>
+            {/* Real Deals + Seller Portal Status */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-[13px] font-medium font-body text-foreground">Your deals</h2>
+                  <p className="text-[11px] text-muted-foreground font-body mt-0.5">
+                    {loading
+                      ? 'Loading…'
+                      : `${deals.length} active · ${sharedCount} shared with sellers · ${viewedCount} opened`}
+                  </p>
+                </div>
                 <Link to="/new-analysis" className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 font-body transition-colors">
                   New <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
-              <div className="divide-y divide-border/40">
-                {recentProperties.map((p) => (
+
+              {loading ? (
+                <div className="card-elevated p-8 flex items-center justify-center text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  <span className="text-[12px] font-body">Loading your deals…</span>
+                </div>
+              ) : !userId ? (
+                <div className="card-elevated p-8 text-center">
+                  <p className="text-[13px] font-body text-foreground mb-1">Sign in to see your real deals</p>
+                  <p className="text-[11px] text-muted-foreground font-body">
+                    Live deal data and seller portal status appear here once you're authenticated.
+                  </p>
+                </div>
+              ) : deals.length === 0 ? (
+                <div className="card-elevated p-8 text-center">
+                  <Share2 className="w-5 h-5 text-muted-foreground mx-auto mb-3" strokeWidth={1.5} />
+                  <p className="text-[13px] font-body text-foreground mb-1">No deals yet</p>
+                  <p className="text-[11px] text-muted-foreground font-body mb-4">
+                    Start a new analysis to begin reviewing offers and sharing with sellers.
+                  </p>
                   <Link
-                    key={p.id}
-                    to="/offer-intake"
-                    className="flex items-center justify-between px-5 py-3.5 hover:bg-muted/30 transition-colors"
+                    to="/new-analysis"
+                    className="inline-flex items-center gap-1.5 text-[11px] font-body font-medium px-3 py-1.5 rounded-sm bg-accent/10 text-accent border border-accent/30 hover:bg-accent/15 transition-colors"
                   >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-medium text-foreground font-body truncate">{p.address}</p>
-                      <p className="text-[11px] text-muted-foreground font-body mt-0.5">
-                        {p.offers} offers · {p.lastUpdated}
-                      </p>
-                    </div>
-                    <div className="hidden sm:block mx-3">
-                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                        p.status === 'Reviewing Offers' ? 'badge-info' :
-                        p.status === 'Counter Sent' ? 'badge-warning' :
-                        p.status === 'Pending Review' ? 'badge-gold' :
-                        'badge-success'
-                      }`}>{p.status}</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <Upload className="w-3 h-3" strokeWidth={1.5} /> New analysis
                   </Link>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {deals.map((d) => (
+                    <DealPortalCard
+                      key={d.analysisId}
+                      deal={d}
+                      userId={userId}
+                      onChanged={refresh}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
