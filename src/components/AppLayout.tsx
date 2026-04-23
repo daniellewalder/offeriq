@@ -115,8 +115,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <span className="text-[11px] font-medium text-accent-foreground tracking-wide">JW</span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-body font-medium text-sidebar-accent-foreground truncate">Jessica Wong</p>
-              <p className="text-[10px] font-body text-sidebar-foreground/55 truncate">Listing Agent · Compass</p>
+              <p className="text-[12px] font-body font-medium text-sidebar-accent-foreground truncate">Danielle Walder</p>
+              <p className="text-[10px] font-body text-sidebar-foreground/55 truncate">Listing Agent · Coldwell Banker</p>
             </div>
             <Link
               to="/"
