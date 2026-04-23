@@ -1,7 +1,9 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { sampleProperty, formatCurrency } from '@/data/sampleData';
-import { Crown, DollarSign, ShieldCheck, FileX, Zap, Home, Wrench, TrendingUp, ArrowRight } from 'lucide-react';
+import { Crown, DollarSign, ShieldCheck, FileX, Zap, Home, Wrench, TrendingUp, ArrowRight, Brain, AlertTriangle, Target, Loader2, RefreshCw } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 type PriorityKey = 'price' | 'certainty' | 'contingencies' | 'speed' | 'leaseback' | 'repair' | 'financial';
 
@@ -56,6 +58,9 @@ export default function SellerPriorities() {
   });
   const [prevTopId, setPrevTopId] = useState<string | null>(null);
   const ranked = useMemo(() => computeScores(weights), [weights]);
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const { toast } = useToast();
 
   const topOffer = ranked[0];
   const topChanged = prevTopId !== null && prevTopId !== topOffer.id;
@@ -66,6 +71,48 @@ export default function SellerPriorities() {
 
   const maxScore = ranked[0]?.compositeScore ?? 1;
   const spreadRange = maxScore - (ranked[ranked.length - 1]?.compositeScore ?? 0);
+
+  const runAiRanking = async () => {
+    setAiLoading(true);
+    try {
+      const offersPayload = sampleProperty.offers.map(o => ({
+        buyer: o.buyerName,
+        agent: o.agentName,
+        price: o.offerPrice,
+        financing: o.financingType,
+        down_payment_pct: o.downPaymentPercent,
+        earnest_money: o.earnestMoney,
+        contingencies: o.contingencies,
+        close_days: o.closeDays,
+        leaseback: o.leasebackRequest,
+        concessions: o.concessions,
+        proof_of_funds: o.proofOfFunds,
+        pre_approval: o.preApproval,
+        close_probability: o.scores.closeProbability,
+        financial_confidence: o.scores.financialConfidence,
+        contingency_risk: o.scores.contingencyRisk,
+      }));
+
+      const { data, error } = await supabase.functions.invoke('rank-offers', {
+        body: {
+          offers: offersPayload,
+          weights,
+          property: { address: sampleProperty.address, listingPrice: sampleProperty.listingPrice },
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) {
+        toast({ title: 'AI Analysis Error', description: data.error, variant: 'destructive' });
+      } else if (data?.analysis) {
+        setAiAnalysis(data.analysis);
+      }
+    } catch (e: any) {
+      toast({ title: 'AI Analysis Failed', description: e.message || 'Something went wrong', variant: 'destructive' });
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   return (
     <AppLayout>
@@ -268,6 +315,106 @@ export default function SellerPriorities() {
                 <span className="text-[11px] text-muted-foreground font-body">Score spread across all offers</span>
               </div>
               <span className="text-[13px] font-body font-medium text-foreground tabular-nums">{spreadRange} pts</span>
+            </div>
+
+            {/* AI Strategist Section */}
+            <div className="mt-6 rounded-md border border-border/60 bg-card">
+              <div className="p-5 border-b border-border/40 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-sm bg-accent/10 flex items-center justify-center">
+                    <Brain className="w-4 h-4 text-accent" strokeWidth={1.5} />
+                  </div>
+                  <div>
+                    <p className="text-[13px] font-body font-medium text-foreground">AI Priority Strategist</p>
+                    <p className="text-[11px] text-muted-foreground font-body">Re-ranks offers based on your seller's priorities</p>
+                  </div>
+                </div>
+                <button
+                  onClick={runAiRanking}
+                  disabled={aiLoading}
+                  className="flex items-center gap-2 px-4 py-2 rounded-md bg-accent text-accent-foreground text-[12px] font-body font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+                >
+                  {aiLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  {aiLoading ? 'Analyzing…' : aiAnalysis ? 'Re-analyze' : 'Get AI Analysis'}
+                </button>
+              </div>
+
+              {aiAnalysis && (
+                <div className="p-5 space-y-5">
+                  {/* Recommended Offer */}
+                  {aiAnalysis.recommended_offer && (
+                    <div className="rounded-md border border-accent/30 bg-accent/[0.04] p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Target className="w-4 h-4 text-accent" strokeWidth={1.5} />
+                        <span className="text-[10px] tracking-[0.15em] uppercase text-accent font-body font-medium">AI Recommendation</span>
+                      </div>
+                      <p className="heading-display text-xl text-foreground">{aiAnalysis.recommended_offer.buyer}</p>
+                      <p className="text-[13px] text-muted-foreground font-body mt-1 leading-relaxed">
+                        {aiAnalysis.recommended_offer.why_this_offer_is_best_for_these_priorities}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* AI Ranked Offers */}
+                  {aiAnalysis.ranked_offers && (
+                    <div>
+                      <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-3">AI-Ranked Order</p>
+                      <div className="space-y-2">
+                        {aiAnalysis.ranked_offers.map((ro: any, i: number) => (
+                          <div key={i} className={`flex items-start gap-3 rounded-md border p-3 ${i === 0 ? 'border-accent/30 bg-accent/[0.02]' : 'border-border/40'}`}>
+                            <div className={`w-6 h-6 rounded-sm flex items-center justify-center text-[11px] font-body font-medium flex-shrink-0 ${i === 0 ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>
+                              {ro.rank}
+                            </div>
+                            <div>
+                              <p className="text-[13px] font-body font-medium text-foreground">{ro.buyer}</p>
+                              <p className="text-[11px] text-muted-foreground font-body mt-0.5 leading-relaxed">{ro.score_rationale}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Priority Conflicts */}
+                  {aiAnalysis.priority_conflicts?.length > 0 && (
+                    <div>
+                      <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-3">Priority Conflicts</p>
+                      <div className="space-y-2">
+                        {aiAnalysis.priority_conflicts.map((conflict: string, i: number) => (
+                          <div key={i} className="flex items-start gap-2 text-[12px] text-muted-foreground font-body">
+                            <AlertTriangle className="w-3.5 h-3.5 text-warning flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+                            <span>{conflict}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Caution Flags */}
+                  {aiAnalysis.caution_flags?.length > 0 && (
+                    <div>
+                      <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-3">Caution Flags</p>
+                      <div className="space-y-2">
+                        {aiAnalysis.caution_flags.map((flag: string, i: number) => (
+                          <div key={i} className="flex items-start gap-2 text-[12px] text-muted-foreground font-body">
+                            <ShieldCheck className="w-3.5 h-3.5 text-destructive/70 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+                            <span>{flag}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Priority Shift Insight */}
+                  {aiAnalysis.priority_shift_insight && (
+                    <div className="rounded-md bg-muted/50 p-3">
+                      <p className="text-[11px] text-muted-foreground font-body italic leading-relaxed">
+                        💡 {aiAnalysis.priority_shift_insight}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
