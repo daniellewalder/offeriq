@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
-import { sampleProperty, formatCurrency } from '@/data/sampleData';
+import { formatCurrency } from '@/data/sampleData';
+import EmptyDealState from '@/components/EmptyDealState';
 import { computeScores, type ScoreDetail } from '@/lib/scoringEngine';
 import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, Database, Loader2, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -41,9 +42,8 @@ const factorBarColor = (impact: number, isRisk: boolean) => {
 
 export default function RiskScoring() {
   const [expandedCards, setExpandedCards] = useState<Record<string, string | null>>({});
-  const [offers, setOffers] = useState<Offer[]>(sampleProperty.offers);
-  const [listingPrice, setListingPrice] = useState(sampleProperty.listingPrice);
-  const [usingDemo, setUsingDemo] = useState(true);
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [listingPrice, setListingPrice] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -59,12 +59,11 @@ export default function RiskScoring() {
         if (!analysis) return;
         const rows = await fetchOffersWithExtraction(analysis.id);
         if (cancelled || rows.length === 0) return;
-        const lp = Number(analysis.properties?.listing_price ?? sampleProperty.listingPrice);
+        const lp = Number(analysis.properties?.listing_price ?? 0);
         setListingPrice(lp);
         setOffers(rows.map(r => adaptOffer(r, lp)));
-        setUsingDemo(false);
       } catch (e: any) {
-        toast({ title: 'Could not load live offers', description: 'Showing demo data instead.', variant: 'destructive' });
+        toast({ title: 'Could not load offers', description: e.message ?? 'Failed to load.', variant: 'destructive' });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -88,8 +87,8 @@ export default function RiskScoring() {
   };
 
   const handleSaveScores = async () => {
-    if (usingDemo) {
-      toast({ title: 'Sign in to save scores', description: 'Demo data cannot be persisted.' });
+    if (offers.length === 0) {
+      toast({ title: 'No offers to score', description: 'Upload offers to compute and save scores.' });
       return;
     }
     setSaving(true);
@@ -133,7 +132,6 @@ export default function RiskScoring() {
             <h1 className="text-display-lg text-foreground">Quality &amp; Risk Scoring</h1>
             <p className="text-[13px] text-muted-foreground font-body mt-3 max-w-2xl leading-[1.7]">
               Rules-based scoring with transparent factor breakdowns. Tap any score to see exactly what's driving it.
-              {usingDemo && <span className="ml-2 text-accent">· Demo data</span>}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -160,6 +158,13 @@ export default function RiskScoring() {
           <div className="space-y-4">
             {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-64 rounded-md" />)}
           </div>
+        )}
+
+        {!loading && scoredOffers.length === 0 && (
+          <EmptyDealState
+            title="No offers to score yet"
+            message="Risk scoring runs on uploaded offer packages. Once you've added offers, you'll see transparent factor breakdowns for strength, close probability, financial confidence, contingency risk, timing risk, and completeness."
+          />
         )}
 
         {scoredOffers.map(({ offer, scores }) => (
