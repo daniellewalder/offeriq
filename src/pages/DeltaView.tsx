@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AppLayout from "@/components/AppLayout";
-import { sampleProperty } from "@/data/sampleData";
+import EmptyDealState from "@/components/EmptyDealState";
 import {
   Loader2,
   TrendingUp,
@@ -81,11 +81,10 @@ export default function DeltaView() {
       setLoading(true);
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        let listingPrice = sampleProperty.listingPrice;
-        let offers = sampleProperty.offers;
+        let listingPrice = 0;
+        let offers: any[] = [];
         let scoresMap: Record<string, ScoredOffer | undefined> = {};
         let priorities: SellerPriorityWeights | null = null;
-        let demo = true;
 
         if (user) {
           const analysis = await fetchLatestAnalysisForUser(user.id);
@@ -96,7 +95,6 @@ export default function DeltaView() {
             const rows = await fetchOffersWithExtraction(analysis.id);
             if (rows.length > 0) {
               offers = rows.map((r) => adaptOffer(r, listingPrice));
-              demo = false;
               const persisted = await fetchLatestRiskScores(offers.map((o) => o.id));
               for (const o of offers) {
                 scoresMap[o.id] = persisted[o.id]
@@ -120,8 +118,9 @@ export default function DeltaView() {
           }
         }
 
-        if (demo) {
-          for (const o of offers) scoresMap[o.id] = computeScores(o, listingPrice);
+        if (offers.length === 0) {
+          if (active) { setTarget(null); setDeltas([]); setLoading(false); }
+          return;
         }
 
         const t = deriveTargetFromPriorities(listingPrice, priorities);
@@ -130,7 +129,6 @@ export default function DeltaView() {
         if (!active) return;
         setTarget(t);
         setDeltas(result);
-        setUsingDemo(demo);
         setSelectedId(result[0]?.offer_id ?? null);
       } catch (err: any) {
         toast({
@@ -169,17 +167,18 @@ export default function DeltaView() {
           </p>
         </div>
 
-        {usingDemo && !loading && (
-          <div className="rounded-md border border-border/50 bg-muted/30 px-4 py-2.5 text-[12px] text-muted-foreground font-body">
-            Showing demo data. Run an analysis with real offers to see your own deltas.
-          </div>
-        )}
-
         {loading && (
           <div className="flex items-center justify-center py-24 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin mr-2" />
             <span className="text-[13px] font-body">Computing deltas…</span>
           </div>
+        )}
+
+        {!loading && deltas.length === 0 && (
+          <EmptyDealState
+            title="Nothing to compare against the seller's target yet"
+            message="The Delta View compares each offer to the seller's desired outcome. Add offers to your analysis to see alignment scores and where the gaps are."
+          />
         )}
 
         {!loading && target && (

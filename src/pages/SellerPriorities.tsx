@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
-import { sampleProperty, formatCurrency } from '@/data/sampleData';
+import { formatCurrency } from '@/data/sampleData';
+import EmptyDealState from '@/components/EmptyDealState';
 import { Crown, DollarSign, ShieldCheck, FileX, Zap, Home, Wrench, TrendingUp, ArrowRight, Brain, AlertTriangle, Target, Loader2, RefreshCw, Save, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -68,10 +69,9 @@ export default function SellerPriorities() {
     price: 80, certainty: 70, contingencies: 60, speed: 50, leaseback: 30, repair: 40, financial: 65,
   });
   const [prevTopId, setPrevTopId] = useState<string | null>(null);
-  const [offers, setOffers] = useState<Offer[]>(sampleProperty.offers);
+  const [offers, setOffers] = useState<Offer[]>([]);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [usingDemo, setUsingDemo] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const ranked = useMemo(() => computeScores(weights, offers), [weights, offers]);
@@ -79,12 +79,12 @@ export default function SellerPriorities() {
   const [aiLoading, setAiLoading] = useState(false);
   const { toast } = useToast();
 
-  const topOffer = ranked[0];
-  const topChanged = prevTopId !== null && prevTopId !== topOffer.id;
+  const topOffer = ranked[0] ?? null;
+  const topChanged = prevTopId !== null && topOffer && prevTopId !== topOffer.id;
 
   useEffect(() => {
-    setPrevTopId(topOffer.id);
-  }, [topOffer.id]);
+    if (topOffer) setPrevTopId(topOffer.id);
+  }, [topOffer]);
 
   // Load real offers + saved priorities on mount
   useEffect(() => {
@@ -105,9 +105,8 @@ export default function SellerPriorities() {
         if (cancelled) return;
 
         if (offerRows.length > 0) {
-          const lp = Number(analysis.properties?.listing_price ?? sampleProperty.listingPrice);
+          const lp = Number(analysis.properties?.listing_price ?? 0);
           setOffers(offerRows.map(r => adaptOffer(r, lp)));
-          setUsingDemo(false);
         }
 
         if (savedPriorities) {

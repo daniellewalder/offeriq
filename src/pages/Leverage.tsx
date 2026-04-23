@@ -18,7 +18,8 @@ import {
   FileCheck,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { sampleProperty, formatCurrency } from "@/data/sampleData";
+import { formatCurrency } from "@/data/sampleData";
+import EmptyDealState from "@/components/EmptyDealState";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -98,11 +99,10 @@ export default function Leverage() {
       setLoading(true);
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        let listingPrice = sampleProperty.listingPrice;
-        let goals: string[] = sampleProperty.sellerGoals;
-        let offers = sampleProperty.offers;
+        let listingPrice = 0;
+        let goals: string[] = [];
+        let offers: any[] = [];
         let analysisId: string | null = null;
-        let demo = true;
 
         if (user) {
           const analysis = await fetchLatestAnalysisForUser(user.id);
@@ -116,7 +116,6 @@ export default function Leverage() {
             const rows = await fetchOffersWithExtraction(analysis.id);
             if (rows.length > 0) {
               offers = rows.map((r) => adaptOffer(r, listingPrice));
-              demo = false;
             }
 
             // Hydrate previously saved suggestions if present
@@ -136,11 +135,14 @@ export default function Leverage() {
           }
         }
 
+        if (offers.length === 0) {
+          if (active) { setDealAnalysisId(analysisId); setLoading(false); }
+          return;
+        }
         const result = generateLeverage(offers, { listingPrice, goals });
 
         if (!active) return;
         setDealAnalysisId(analysisId);
-        setUsingDemo(demo);
         // Only overwrite groups if we didn't hydrate saved ones
         setGroups((prev) =>
           prev.length > 0 ? prev : groupByOffer(result.suggestions, offers),
@@ -244,19 +246,19 @@ export default function Leverage() {
           </div>
         </div>
 
-        {usingDemo && !loading && (
-          <div className="rounded-md border border-border/50 bg-muted/30 px-4 py-2.5 text-[12px] text-muted-foreground font-body">
-            Showing demo data. Run an analysis with real offers to generate
-            leverage from your own extracted fields.
-          </div>
-        )}
-
         {/* Loading state */}
         {loading && (
           <div className="flex items-center justify-center py-20 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin mr-2" />
             <span className="text-[13px] font-body">Generating leverage suggestions…</span>
           </div>
+        )}
+
+        {!loading && groups.length === 0 && (
+          <EmptyDealState
+            title="No leverage points yet"
+            message="Leverage suggestions are generated from your real offer terms. Add offers to surface easy wins, high-impact asks, and ready-to-counter language."
+          />
         )}
 
         {!loading && (

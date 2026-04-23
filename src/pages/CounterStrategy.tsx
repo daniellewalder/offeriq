@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AppLayout from "@/components/AppLayout";
-import { sampleProperty, formatCurrency } from "@/data/sampleData";
+import { formatCurrency } from "@/data/sampleData";
+import EmptyDealState from "@/components/EmptyDealState";
 import {
   TrendingUp,
   Shield,
@@ -77,14 +78,13 @@ export default function CounterStrategyPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
 
-        let listingPrice = sampleProperty.listingPrice;
-        let goals = sampleProperty.sellerGoals;
-        let offers = sampleProperty.offers;
+        let listingPrice = 0;
+        let goals: string[] = [];
+        let offers: any[] = [];
         let scoresMap: Record<string, ScoredOffer | undefined> = {};
         let leverage: LeverageSuggestion[] = [];
         let priorities: SellerPriorityWeights | null = null;
         let analysisId: string | null = null;
-        let demo = true;
 
         if (user) {
           const analysis = await fetchLatestAnalysisForUser(user.id);
@@ -99,7 +99,6 @@ export default function CounterStrategyPage() {
             const rows = await fetchOffersWithExtraction(analysis.id);
             if (rows.length > 0) {
               offers = rows.map((r) => adaptOffer(r, listingPrice));
-              demo = false;
 
               // Pull persisted scores; fall back to fresh compute.
               const persistedScores = await fetchLatestRiskScores(
@@ -143,7 +142,6 @@ export default function CounterStrategyPage() {
                   setStrategies(hydrated);
                   setSavedAt(new Date(savedStrategies[0].generated_at));
                   setDealAnalysisId(analysisId);
-                  setUsingDemo(false);
                   setLoading(false);
                   return;
                 }
@@ -152,9 +150,9 @@ export default function CounterStrategyPage() {
           }
         }
 
-        if (demo) {
-          for (const o of offers) scoresMap[o.id] = computeScores(o, listingPrice);
-          leverage = generateLeverage(offers, { listingPrice, goals }).suggestions;
+        if (offers.length === 0) {
+          if (active) { setStrategies([]); setDealAnalysisId(analysisId); setLoading(false); }
+          return;
         }
 
         const bundle = generateCounterStrategies({
@@ -169,7 +167,6 @@ export default function CounterStrategyPage() {
         if (!active) return;
         setStrategies(bundle.strategies);
         setDealAnalysisId(analysisId);
-        setUsingDemo(demo);
       } catch (err: any) {
         toast({
           title: "Could not load strategies",
