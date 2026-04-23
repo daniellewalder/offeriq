@@ -112,7 +112,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="px-3 py-3 border-t border-sidebar-border">
           <div className="flex items-center gap-3 px-3 py-2 rounded-md">
             <div className="w-8 h-8 rounded-full bg-gradient-gold flex items-center justify-center shadow-sm">
-              <span className="text-[11px] font-medium text-accent-foreground tracking-wide">JW</span>
+              <span className="text-[11px] font-medium text-accent-foreground tracking-wide">DW</span>
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[12px] font-body font-medium text-sidebar-accent-foreground truncate">Danielle Walder</p>
