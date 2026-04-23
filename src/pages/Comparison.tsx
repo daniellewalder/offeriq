@@ -459,11 +459,70 @@ export default function Comparison() {
         {/* ── Seller Context ── */}
         <div className="card-elevated p-6">
           <h3 className="heading-display text-xl mb-4">Seller Context</h3>
-          <p className="text-[13px] text-muted-foreground font-body mb-4 leading-relaxed">{sampleProperty.sellerNotes}</p>
+          <p className="text-[13px] text-muted-foreground font-body mb-4 leading-relaxed">{property.sellerNotes}</p>
           <div className="flex flex-wrap gap-2">
-            {sampleProperty.sellerGoals.map(g => (
+            {(property.sellerGoals ?? []).map(g => (
               <span key={g} className="badge-gold">{g}</span>
             ))}
+          </div>
+        </div>
+
+        {/* ── Missing Items & Weak Points ── */}
+        <div>
+          <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-4">Missing Items & Weak Points</p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {sorted.map(o => {
+              const missing = o.missingItems ?? [];
+              const risks = o.notableRisks ?? [];
+              const strengths = o.notableStrengths ?? [];
+              const isClean = missing.length === 0 && risks.length === 0;
+              return (
+                <div key={o.id} className="card-elevated p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[13px] font-medium font-body text-foreground">{o.buyerName}</p>
+                    <span className={`text-[10px] font-body px-2 py-0.5 rounded ${o.scores.packageCompleteness >= 90 ? 'bg-success/10 text-success' : o.scores.packageCompleteness >= 70 ? 'bg-warning/10 text-warning' : 'bg-destructive/10 text-destructive'}`}>
+                      {o.scores.packageCompleteness}% complete
+                    </span>
+                  </div>
+                  {missing.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <FileWarning className="w-3.5 h-3.5 text-destructive" strokeWidth={1.5} />
+                        <span className="text-[10px] tracking-wider uppercase text-destructive font-body font-medium">Missing</span>
+                      </div>
+                      <ul className="space-y-0.5">
+                        {missing.map(m => <li key={m} className="text-[12px] text-muted-foreground font-body">· {m}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {risks.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <AlertTriangle className="w-3.5 h-3.5 text-warning" strokeWidth={1.5} />
+                        <span className="text-[10px] tracking-wider uppercase text-warning font-body font-medium">Weak points</span>
+                      </div>
+                      <ul className="space-y-0.5">
+                        {risks.map(r => <li key={r} className="text-[12px] text-muted-foreground font-body">· {r}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {strengths.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <CheckCircle className="w-3.5 h-3.5 text-success" strokeWidth={1.5} />
+                        <span className="text-[10px] tracking-wider uppercase text-success font-body font-medium">Strengths</span>
+                      </div>
+                      <ul className="space-y-0.5">
+                        {strengths.map(s => <li key={s} className="text-[12px] text-muted-foreground font-body">· {s}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {isClean && strengths.length === 0 && (
+                    <p className="text-[12px] text-muted-foreground font-body italic">No flagged items.</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -556,12 +615,14 @@ function AIStrategistPanel({
   cleanest,
   bestBalance,
   offers,
+  property,
 }: {
   highest: Offer;
   safest: Offer;
   cleanest: Offer;
   bestBalance: Offer;
   offers: Offer[];
+  property: { address: string; listingPrice: number };
 }) {
   const [isOpen, setIsOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -604,7 +665,7 @@ function AIStrategistPanel({
         },
         body: JSON.stringify({
           offers: offersPayload,
-          property: { address: sampleProperty.address, listingPrice: sampleProperty.listingPrice },
+          property: { address: property.address, listingPrice: property.listingPrice },
         }),
       });
 
