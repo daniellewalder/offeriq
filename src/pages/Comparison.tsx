@@ -147,9 +147,10 @@ export default function Comparison() {
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
           <div>
             <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Comparison</p>
-            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">{sampleProperty.address}</h1>
+            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">{property.address}</h1>
             <p className="text-[13px] text-muted-foreground font-body mt-2">
-              {offers.length} offers · Listed at {formatCurrency(sampleProperty.listingPrice)}
+              {offers.length} offers · Listed at {formatCurrency(property.listingPrice)}
+              {usingDemo && <span className="ml-2 text-accent">· Demo data</span>}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -170,8 +171,14 @@ export default function Comparison() {
           </div>
         </div>
 
+        {loading && (
+          <div className="grid sm:grid-cols-5 gap-4">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-md" />)}
+          </div>
+        )}
+
         {/* ── Spotlight Cards ── */}
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {spotlights.map((sp) => (
             <div key={sp.label} className={`rounded-md border p-5 ${sp.accent}`}>
               <div className="flex items-center gap-2 mb-3">
@@ -192,6 +199,7 @@ export default function Comparison() {
           cleanest={cleanest}
           bestBalance={bestBalance}
           offers={offers}
+          property={property}
         />
 
         {/* ── Key Terms Comparison ── */}
