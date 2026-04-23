@@ -47,15 +47,59 @@ const Bar = ({ pct, color }: { pct: number; color: string }) => (
 
 export default function Comparison() {
   const [sortBy, setSortBy] = useState<SortKey>('price');
-  const offers = sampleProperty.offers;
+  const [offers, setOffers] = useState<OfferWithMeta[]>(sampleProperty.offers as OfferWithMeta[]);
+  const [property, setProperty] = useState({
+    address: sampleProperty.address,
+    listingPrice: sampleProperty.listingPrice,
+    sellerNotes: sampleProperty.sellerNotes,
+    sellerGoals: sampleProperty.sellerGoals,
+  });
+  const [loading, setLoading] = useState(true);
+  const [usingDemo, setUsingDemo] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setLoading(false); return; }
+        const analysis = await fetchLatestAnalysisForUser(user.id);
+        if (!analysis) { setLoading(false); return; }
+        const rows = await fetchOffersWithExtraction(analysis.id);
+        if (cancelled) return;
+        const listingPrice = Number(analysis.properties?.listing_price ?? sampleProperty.listingPrice);
+        if (rows.length === 0) { setLoading(false); return; }
+        const adapted = rows.map(r => adaptOffer(r, listingPrice));
+        setOffers(adapted);
+        setProperty({
+          address: analysis.properties?.address ?? sampleProperty.address,
+          listingPrice,
+          sellerNotes: analysis.properties?.seller_notes ?? sampleProperty.sellerNotes,
+          sellerGoals: analysis.properties?.seller_goals ?? sampleProperty.sellerGoals,
+        });
+        setUsingDemo(false);
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e.message ?? 'Failed to load offers');
+          toast({ title: 'Could not load live offers', description: 'Showing demo data instead.', variant: 'destructive' });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [toast]);
 
   const sorted = useMemo(() => [...offers].sort((a, b) => {
     switch (sortBy) {
       case 'price': return b.offerPrice - a.offerPrice;
-      case 'risk': return a.scores.contingencyRisk - b.scores.contingencyRisk;
-      case 'close': return a.closeDays - b.closeDays;
+      case 'closeProb': return b.scores.closeProbability - a.scores.closeProbability;
       case 'financial': return b.scores.financialConfidence - a.scores.financialConfidence;
-      case 'contingencies': return a.contingencies.length - b.contingencies.length;
+      case 'contingencyRisk': return a.scores.contingencyRisk - b.scores.contingencyRisk;
+      case 'timingRisk': return a.scores.timingRisk - b.scores.timingRisk;
+      case 'completeness': return b.scores.packageCompleteness - a.scores.packageCompleteness;
     }
   }), [sortBy, offers]);
 
@@ -67,16 +111,31 @@ export default function Comparison() {
   const maxStrength = bestVal(offers, o => o.scores.offerStrength, 'max');
   const maxCloseProb = bestVal(offers, o => o.scores.closeProbability, 'max');
 
-  /* Spotlight offers */
+  /* Spotlight offers — Highest, Safest, Cleanest, Fastest, Best Balance */
   const highest = offers.reduce((a, b) => a.offerPrice > b.offerPrice ? a : b);
   const safest = offers.reduce((a, b) => a.scores.closeProbability > b.scores.closeProbability ? a : b);
-  const bestBalance = offers.reduce((a, b) => a.scores.offerStrength > b.scores.offerStrength ? a : b);
   const cleanest = offers.reduce((a, b) => a.contingencies.length < b.contingencies.length ? a : b);
+  const fastest = offers.reduce((a, b) => a.closeDays < b.closeDays ? a : b);
+  const bestBalance = offers.reduce((a, b) => a.scores.offerStrength > b.scores.offerStrength ? a : b);
+
+  // Per-offer dynamic badge map for inline pills
+  const badgeMap = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    const push = (id: string, label: string) => { (m[id] ||= []).push(label); };
+    push(highest.id, 'Highest');
+    push(safest.id, 'Safest');
+    push(cleanest.id, 'Cleanest');
+    push(fastest.id, 'Fastest');
+    push(bestBalance.id, 'Best Balance');
+    return m;
+  }, [highest, safest, cleanest, fastest, bestBalance]);
 
   const spotlights = [
-    { label: 'Highest Price', icon: Crown, offer: highest, value: formatCurrency(highest.offerPrice), sub: priceDeltaStr(highest) + ' vs. list', accent: 'border-accent/50 bg-accent/[0.03]' },
+    { label: 'Highest Price', icon: Crown, offer: highest, value: formatCurrency(highest.offerPrice), sub: priceDelta(highest) >= 0 ? `+${formatCurrency(priceDelta(highest))} vs. list` : `${formatCurrency(priceDelta(highest))} vs. list`, accent: 'border-accent/50 bg-accent/[0.03]' },
     { label: 'Safest Close', icon: Shield, offer: safest, value: `${safest.scores.closeProbability}%`, sub: 'close probability', accent: 'border-success/30 bg-success/[0.03]' },
-    { label: 'Best Balance', icon: Scale, offer: bestBalance, value: `${bestBalance.scores.offerStrength}/100`, sub: 'overall strength', accent: 'border-info/30 bg-info/[0.03]' },
+    { label: 'Cleanest', icon: CheckCircle, offer: cleanest, value: `${cleanest.contingencies.length}`, sub: cleanest.contingencies.length === 1 ? 'contingency' : 'contingencies', accent: 'border-info/30 bg-info/[0.03]' },
+    { label: 'Fastest', icon: ZapIcon, offer: fastest, value: `${fastest.closeDays}d`, sub: 'to close', accent: 'border-warning/30 bg-warning/[0.03]' },
+    { label: 'Best Balance', icon: Scale, offer: bestBalance, value: `${bestBalance.scores.offerStrength}/100`, sub: 'overall strength', accent: 'border-accent/60 bg-accent/[0.04]' },
   ];
 
   const isBest = (o: Offer, val: number | string, best: number | string) => val === best;
