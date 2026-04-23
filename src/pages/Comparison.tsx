@@ -1,7 +1,7 @@
 import AppLayout from '@/components/AppLayout';
 import { sampleProperty, formatCurrency } from '@/data/sampleData';
 import { useMemo, useState } from 'react';
-import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
+import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle, Sparkles, Zap, MessageSquare, ArrowRight } from 'lucide-react';
 
 type SortKey = 'price' | 'risk' | 'close' | 'financial' | 'contingencies';
 type Offer = (typeof sampleProperty.offers)[0];
@@ -58,6 +58,7 @@ export default function Comparison() {
   const highest = offers.reduce((a, b) => a.offerPrice > b.offerPrice ? a : b);
   const safest = offers.reduce((a, b) => a.scores.closeProbability > b.scores.closeProbability ? a : b);
   const bestBalance = offers.reduce((a, b) => a.scores.offerStrength > b.scores.offerStrength ? a : b);
+  const cleanest = offers.reduce((a, b) => a.contingencies.length < b.contingencies.length ? a : b);
 
   const spotlights = [
     { label: 'Highest Price', icon: Crown, offer: highest, value: formatCurrency(highest.offerPrice), sub: priceDeltaStr(highest) + ' vs. list', accent: 'border-accent/50 bg-accent/[0.03]' },
@@ -111,6 +112,15 @@ export default function Comparison() {
             </div>
           ))}
         </div>
+
+        {/* ── AI Strategist Analysis ── */}
+        <AIStrategistPanel
+          highest={highest}
+          safest={safest}
+          cleanest={cleanest}
+          bestBalance={bestBalance}
+          offers={offers}
+        />
 
         {/* ── Key Terms Comparison ── */}
         <div>
@@ -374,5 +384,248 @@ export default function Comparison() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   AI Strategist Analysis Panel
+   ───────────────────────────────────────────── */
+
+interface StrategistAnalysis {
+  highest_offer: { buyer: string; price: number; note: string };
+  safest_offer: { buyer: string; close_probability: number; note: string };
+  cleanest_offer: { buyer: string; contingency_count: number; note: string };
+  best_balance_offer: { buyer: string; note: string };
+  ranking_summary: string;
+  offer_by_offer_notes: { buyer: string; headline: string; analysis: string }[];
+  top_tradeoffs: { tradeoff: string; recommendation: string }[];
+}
+
+// Realistic mock analysis
+const MOCK_ANALYSIS: StrategistAnalysis = {
+  highest_offer: {
+    buyer: 'Robert Ashford III',
+    price: 9250000,
+    note: "The biggest number on the board, but it comes with three contingencies and a 45-day timeline. In luxury real estate, a high price that doesn't close is just a number on paper.",
+  },
+  safest_offer: {
+    buyer: 'The Nakamura Trust',
+    close_probability: 94,
+    note: 'All-cash, 21-day close, JPMorgan-verified funds, and one of the top luxury agents in LA running the deal. If certainty is the priority, this is the cleanest path to the closing table.',
+  },
+  cleanest_offer: {
+    buyer: 'The Nakamura Trust',
+    contingency_count: 1,
+    note: "Only one contingency — a 7-day inspection — and it's waived on appraisal. The Nakamura Trust is asking for almost nothing structurally, which means fewer points where the deal can unravel.",
+  },
+  best_balance_offer: {
+    buyer: 'David & Sarah Chen',
+    note: "The Chens aren't the highest or the fastest, but they're the most likely to actually close without drama. 100% package completeness, First Republic pre-approval, and they've volunteered flexibility on leaseback. When you factor in execution risk, the Chens' $8.9M is worth more than Ashford's $9.25M.",
+  },
+  ranking_summary: "You're choosing between Nakamura's speed and certainty at $9.1M, the Chens' reliability at $8.9M, and Ashford's top-dollar price with significant execution risk. Westside is playing a concession game that undercuts their own speed advantage, and the Kapoors are a strong dark horse with appraisal gap coverage that most financed buyers won't offer at this price point.",
+  offer_by_offer_notes: [
+    {
+      buyer: 'The Nakamura Trust',
+      headline: 'Speed and certainty at a premium',
+      analysis: "All-cash, 21-day close, minimal contingencies. The $9.1M price is $350K above list and the JPMorgan verification letter is as strong as proof-of-funds gets. The only question is whether you want to leave $150K on the table versus Ashford's higher but riskier number.",
+    },
+    {
+      buyer: 'David & Sarah Chen',
+      headline: 'The deal that actually closes',
+      analysis: "The best-prepared package in the group — every document present, leaseback flexibility offered unprompted, and a First Republic pre-approval that carries weight. Two contingencies are standard for a financed offer at this price. If you counter to $8.95M with tightened timelines, this becomes the strongest overall position.",
+    },
+    {
+      buyer: 'Westside Holdings LLC',
+      headline: 'Fast but asking for too much',
+      analysis: "A 14-day close sounds compelling until you factor in the $50K concession request on top of the lowest price. The LLC structure also means you need to verify who you're actually selling to. Goldman-backed funds are real, but the operating agreement is still pending review.",
+    },
+    {
+      buyer: 'Robert Ashford III',
+      headline: 'Biggest number, biggest risk',
+      analysis: "At $9.25M, this is $500K above list — but three contingencies, a 45-day timeline, and a paid leaseback request create multiple exit points. The $150K earnest money deposit is also the lowest relative to offer price in the group, which tells you something about commitment level.",
+    },
+    {
+      buyer: 'Priya & Arun Kapoor',
+      headline: 'The smart underdog',
+      analysis: "Don't overlook the Kapoors. They volunteered appraisal gap coverage up to $200K — a move that eliminates one of the most common deal-killers for financed offers in luxury markets. Chase Private Client backing, 28-day close, and a rent-free leaseback. If you counter at $8.95M, this could be your safest financed path.",
+    },
+  ],
+  top_tradeoffs: [
+    {
+      tradeoff: 'Take Nakamura at $9.1M for certainty, or counter Ashford to push toward $9.2M+ with tighter terms?',
+      recommendation: "Counter Nakamura to $9.15M with a 14-day close. They're relocating and motivated — they'll likely accept. Don't chase Ashford's number unless you're willing to wait 45 days and absorb the risk of three contingencies falling through.",
+    },
+    {
+      tradeoff: "Is the Chens' reliability worth $200K less than the top offer?",
+      recommendation: "Yes, if you value certainty. Counter the Chens to $8.95M with 7-day inspections and 21-day loan contingency. Their agent has already signaled flexibility. The net-to-seller difference after accounting for Ashford's concession requests and timeline risk is closer to $100K than $350K.",
+    },
+    {
+      tradeoff: 'Should you engage Westside Holdings despite the low price?',
+      recommendation: "Only as leverage. Let the other buyers know you have a cash offer with a 14-day close. Don't counter Westside directly — their $50K concession request and below-list pricing signal they're looking for a deal, not paying a premium.",
+    },
+  ],
+};
+
+function AIStrategistPanel({
+  highest,
+  safest,
+  cleanest,
+  bestBalance,
+  offers,
+}: {
+  highest: Offer;
+  safest: Offer;
+  cleanest: Offer;
+  bestBalance: Offer;
+  offers: Offer[];
+}) {
+  const [isOpen, setIsOpen] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [analysis, setAnalysis] = useState<StrategistAnalysis>(MOCK_ANALYSIS);
+  const [activeTab, setActiveTab] = useState<'summary' | 'offers' | 'tradeoffs'>('summary');
+
+  const runAnalysis = () => {
+    setIsLoading(true);
+    // Simulate AI call — in production, call supabase.functions.invoke('compare-offers', ...)
+    setTimeout(() => {
+      setAnalysis(MOCK_ANALYSIS);
+      setIsLoading(false);
+    }, 2000);
+  };
+
+  const categoryCards = [
+    { label: 'Highest Price', icon: Crown, buyer: analysis.highest_offer.buyer, detail: formatCurrency(analysis.highest_offer.price), note: analysis.highest_offer.note, accent: 'border-accent/40' },
+    { label: 'Safest Close', icon: Shield, buyer: analysis.safest_offer.buyer, detail: `${analysis.safest_offer.close_probability}% close prob.`, note: analysis.safest_offer.note, accent: 'border-success/40' },
+    { label: 'Cleanest Structure', icon: CheckCircle, buyer: analysis.cleanest_offer.buyer, detail: `${analysis.cleanest_offer.contingency_count} contingency`, note: analysis.cleanest_offer.note, accent: 'border-info/40' },
+    { label: 'Best Balance', icon: Scale, buyer: analysis.best_balance_offer.buyer, detail: 'Recommended', note: analysis.best_balance_offer.note, accent: 'border-accent/60 bg-accent/[0.03]' },
+  ];
+
+  return (
+    <div className="card-elevated overflow-hidden">
+      {/* Header */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-5 hover:bg-muted/20 transition-colors text-left"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-accent" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold font-body">AI Strategist Analysis</h3>
+            <p className="text-xs text-muted-foreground font-body">How a top listing agent would read these offers</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={(e) => { e.stopPropagation(); runAnalysis(); }}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-body font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {isLoading ? (
+              <><Sparkles className="w-3.5 h-3.5 animate-pulse" /> Analyzing…</>
+            ) : (
+              <><Zap className="w-3.5 h-3.5" /> Re-analyze</>
+            )}
+          </button>
+          <ArrowUpDown className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </div>
+      </button>
+
+      {isOpen && analysis && (
+        <div className="border-t border-border">
+          {/* Tabs */}
+          <div className="flex border-b border-border/60 px-5">
+            {([
+              { key: 'summary' as const, label: 'Strategic Summary' },
+              { key: 'offers' as const, label: 'Offer-by-Offer' },
+              { key: 'tradeoffs' as const, label: 'Key Tradeoffs' },
+            ]).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-4 py-3 text-xs font-body font-medium border-b-2 transition-colors ${
+                  activeTab === tab.key
+                    ? 'border-accent text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="p-5 space-y-5">
+            {/* ── Summary Tab ── */}
+            {activeTab === 'summary' && (
+              <>
+                {/* Ranking summary */}
+                <div className="p-4 bg-muted/30 rounded-lg border border-border/60">
+                  <div className="flex items-start gap-2">
+                    <MessageSquare className="w-4 h-4 text-accent mt-0.5 flex-shrink-0" />
+                    <p className="text-[13px] font-body leading-relaxed text-foreground">{analysis.ranking_summary}</p>
+                  </div>
+                </div>
+
+                {/* Category cards */}
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {categoryCards.map(card => {
+                    const Icon = card.icon;
+                    return (
+                      <div key={card.label} className={`p-4 rounded-lg border ${card.accent}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Icon className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
+                          <span className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium">{card.label}</span>
+                        </div>
+                        <p className="text-sm font-semibold font-body text-foreground">{card.buyer}</p>
+                        <p className="text-xs text-accent font-body font-medium mt-0.5">{card.detail}</p>
+                        <p className="text-xs text-muted-foreground font-body mt-2 leading-relaxed">{card.note}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* ── Offer-by-Offer Tab ── */}
+            {activeTab === 'offers' && (
+              <div className="space-y-3">
+                {analysis.offer_by_offer_notes.map((note, i) => (
+                  <div key={i} className="p-4 rounded-lg border border-border hover:border-accent/30 transition-colors">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-semibold font-body text-foreground">{note.buyer}</h4>
+                      <span className="text-[10px] tracking-wider uppercase font-body text-accent font-medium px-2 py-0.5 bg-accent/10 rounded">{note.headline}</span>
+                    </div>
+                    <p className="text-[13px] text-muted-foreground font-body leading-relaxed">{note.analysis}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── Tradeoffs Tab ── */}
+            {activeTab === 'tradeoffs' && (
+              <div className="space-y-4">
+                {analysis.top_tradeoffs.map((t, i) => (
+                  <div key={i} className="p-4 rounded-lg border border-border">
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="text-xs font-body font-semibold text-accent">{i + 1}</span>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium font-body text-foreground mb-2">{t.tradeoff}</p>
+                        <div className="flex items-start gap-2 p-3 bg-success/5 border border-success/20 rounded-lg">
+                          <ArrowRight className="w-3.5 h-3.5 text-success mt-0.5 flex-shrink-0" />
+                          <p className="text-xs font-body text-foreground leading-relaxed">{t.recommendation}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
