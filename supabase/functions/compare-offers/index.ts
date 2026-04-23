@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,62 +6,28 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SYSTEM_PROMPT = `You are an expert real estate offer strategist helping a listing agent compare multiple offers on the same property.
-
-You write like a strong listing agent explaining options to a seller — concise, strategic, readable, plain English.
-
-Rules:
-- Do NOT assume the highest offer is the best offer.
-- Consider contingencies, financing, timing, completeness, and overall closing confidence.
-- Avoid legal conclusions.
-- Avoid certainty when data is incomplete.
-- Be opinionated but fair.
-
-Return ONLY valid JSON (no markdown fences) with these sections:
-
-{
-  "highest_offer": { "buyer": "name", "price": number, "note": "one-liner on why price alone isn't the whole story" },
-  "safest_offer": { "buyer": "name", "close_probability": number, "note": "why this is the safest path to closing" },
-  "cleanest_offer": { "buyer": "name", "contingency_count": number, "note": "why this is the cleanest structurally" },
-  "best_balance_offer": { "buyer": "name", "note": "why this is the best overall recommendation" },
-  "ranking_summary": "2-3 sentence strategic overview for the seller",
-  "offer_by_offer_notes": [
-    { "buyer": "name", "headline": "3-5 word summary", "analysis": "2-3 sentence strategic analysis" }
-  ],
-  "top_tradeoffs": [
-    { "tradeoff": "short description of a key decision the seller faces", "recommendation": "what a smart listing agent would advise" }
-  ]
-}`;
-
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const { offers, property } = await req.json();
-
-    if (!offers || !Array.isArray(offers)) {
-      return new Response(
-        JSON.stringify({ error: "offers array is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+
+    const { offers, property, deal_analysis_id } = await req.json();
+    if (!offers || !Array.isArray(offers)) {
+      return new Response(JSON.stringify({ error: "Missing offers array" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    const userPrompt = `Property: ${property?.address || "Unknown"}, Listed at ${property?.listingPrice || "N/A"}
-Seller goals: ${property?.sellerGoals?.join(", ") || "Not specified"}
-Seller notes: ${property?.sellerNotes || "None"}
+    const systemPrompt = `You are an elite buyer-side real estate strategist analyzing competing offers on a luxury property. Be specific, data-driven, and opinionated. Reference actual numbers from the offers. Write like a top listing agent would talk to their client — confident, practical, no hedging.`;
 
-Here are the ${offers.length} offers:
+    const userPrompt = `Analyze these ${offers.length} offers on ${property?.address || "the property"} (listed at $${property?.listingPrice?.toLocaleString() || "N/A"}).
 
+Offers:
 ${JSON.stringify(offers, null, 2)}
 
-Analyze these offers and return the structured JSON comparison.`;
+Return your analysis using the compare_offers tool.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -72,57 +38,101 @@ Analyze these offers and return the structured JSON comparison.`;
       body: JSON.stringify({
         model: "google/gemini-3-flash-preview",
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.3,
+        tools: [{
+          type: "function",
+          function: {
+            name: "compare_offers",
+            description: "Return structured offer comparison analysis",
+            parameters: {
+              type: "object",
+              properties: {
+                highest_offer: {
+                  type: "object",
+                  properties: { buyer: { type: "string" }, price: { type: "number" }, note: { type: "string" } },
+                  required: ["buyer", "price", "note"],
+                },
+                safest_offer: {
+                  type: "object",
+                  properties: { buyer: { type: "string" }, close_probability: { type: "number" }, note: { type: "string" } },
+                  required: ["buyer", "close_probability", "note"],
+                },
+                cleanest_offer: {
+                  type: "object",
+                  properties: { buyer: { type: "string" }, contingency_count: { type: "number" }, note: { type: "string" } },
+                  required: ["buyer", "contingency_count", "note"],
+                },
+                best_balance_offer: {
+                  type: "object",
+                  properties: { buyer: { type: "string" }, note: { type: "string" } },
+                  required: ["buyer", "note"],
+                },
+                ranking_summary: { type: "string" },
+                offer_by_offer_notes: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: { buyer: { type: "string" }, headline: { type: "string" }, analysis: { type: "string" } },
+                    required: ["buyer", "headline", "analysis"],
+                  },
+                },
+                top_tradeoffs: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: { tradeoff: { type: "string" }, recommendation: { type: "string" } },
+                    required: ["tradeoff", "recommendation"],
+                  },
+                },
+              },
+              required: ["highest_offer", "safest_offer", "cleanest_offer", "best_balance_offer", "ranking_summary", "offer_by_offer_notes", "top_tradeoffs"],
+            },
+          },
+        }],
+        tool_choice: { type: "function", function: { name: "compare_offers" } },
       }),
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again shortly." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Add funds in Settings." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const errText = await response.text();
-      console.error("AI gateway error:", response.status, errText);
-      return new Response(JSON.stringify({ error: "AI comparison failed" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      const status = response.status;
+      if (status === 429) return new Response(JSON.stringify({ error: "Rate limited, please try again later." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (status === 402) return new Response(JSON.stringify({ error: "Credits exhausted. Add funds in Settings > Workspace > Usage." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const t = await response.text();
+      console.error("AI gateway error:", status, t);
+      return new Response(JSON.stringify({ error: "AI analysis failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    const result = await response.json();
+    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
+    if (!toolCall) throw new Error("No tool call returned from AI");
+
+    const analysis = JSON.parse(toolCall.function.arguments);
+
+    // Save to DB if deal_analysis_id provided
+    if (deal_analysis_id) {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const supabase = createClient(supabaseUrl, serviceKey);
+
+      await supabase.from("activity_logs").insert({
+        user_id: deal_analysis_id, // will be replaced with real user_id in auth flow
+        deal_analysis_id,
+        action: "AI comparison analysis completed",
+        entity_type: "deal_analysis",
+        entity_id: deal_analysis_id,
+        metadata: { analysis_type: "compare_offers", offers_count: offers.length },
       });
     }
 
-    const aiResponse = await response.json();
-    const content = aiResponse.choices?.[0]?.message?.content || "";
-
-    let cleanJson = content.trim();
-    if (cleanJson.startsWith("```")) {
-      cleanJson = cleanJson.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-    }
-
-    let analysis;
-    try {
-      analysis = JSON.parse(cleanJson);
-    } catch {
-      console.error("Failed to parse AI response:", cleanJson.slice(0, 500));
-      return new Response(JSON.stringify({ error: "AI returned invalid JSON", raw: cleanJson.slice(0, 1000) }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    return new Response(JSON.stringify({ success: true, analysis }), {
-      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(JSON.stringify({ analysis }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (e) {
-    console.error("compare-offers error:", e);
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  } catch (err) {
+    console.error("compare-offers error:", err);
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

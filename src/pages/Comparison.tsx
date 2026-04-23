@@ -1,7 +1,8 @@
 import AppLayout from '@/components/AppLayout';
 import { sampleProperty, formatCurrency } from '@/data/sampleData';
 import { useMemo, useState } from 'react';
-import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle, Sparkles, Zap, MessageSquare, ArrowRight } from 'lucide-react';
+import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle, Sparkles, Zap, MessageSquare, ArrowRight, Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 type SortKey = 'price' | 'risk' | 'close' | 'financial' | 'contingencies';
 type Offer = (typeof sampleProperty.offers)[0];
@@ -483,14 +484,58 @@ function AIStrategistPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<StrategistAnalysis>(MOCK_ANALYSIS);
   const [activeTab, setActiveTab] = useState<'summary' | 'offers' | 'tradeoffs'>('summary');
+  const { toast } = useToast();
 
-  const runAnalysis = () => {
+  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+  const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+  const runAnalysis = async () => {
     setIsLoading(true);
-    // Simulate AI call — in production, call supabase.functions.invoke('compare-offers', ...)
-    setTimeout(() => {
-      setAnalysis(MOCK_ANALYSIS);
+    try {
+      const offersPayload = offers.map(o => ({
+        buyer: o.buyerName,
+        agent: o.agentName,
+        price: o.offerPrice,
+        financing: o.financingType,
+        down_payment_pct: o.downPaymentPercent,
+        earnest_money: o.earnestMoney,
+        contingencies: o.contingencies,
+        inspection_period: o.inspectionPeriod,
+        appraisal_terms: o.appraisalTerms,
+        close_days: o.closeDays,
+        leaseback: o.leasebackRequest,
+        concessions: o.concessions,
+        proof_of_funds: o.proofOfFunds,
+        pre_approval: o.preApproval,
+        completeness: o.completeness,
+        close_probability: o.scores.closeProbability,
+        financial_confidence: o.scores.financialConfidence,
+        contingency_risk: o.scores.contingencyRisk,
+      }));
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/compare-offers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(SUPABASE_KEY ? { Authorization: `Bearer ${SUPABASE_KEY}` } : {}),
+        },
+        body: JSON.stringify({
+          offers: offersPayload,
+          property: { address: sampleProperty.address, listingPrice: sampleProperty.listingPrice },
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || data?.error) {
+        toast({ title: 'AI Analysis Error', description: data?.error || 'Request failed', variant: 'destructive' });
+      } else if (data?.analysis) {
+        setAnalysis(data.analysis);
+      }
+    } catch (e: any) {
+      toast({ title: 'AI Analysis Failed', description: e.message || 'Something went wrong', variant: 'destructive' });
+    } finally {
       setIsLoading(false);
-    }, 2000);
+    }
   };
 
   const categoryCards = [
@@ -523,7 +568,7 @@ function AIStrategistPanel({
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-body font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {isLoading ? (
-              <><Sparkles className="w-3.5 h-3.5 animate-pulse" /> Analyzing…</>
+              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyzing…</>
             ) : (
               <><Zap className="w-3.5 h-3.5" /> Re-analyze</>
             )}
