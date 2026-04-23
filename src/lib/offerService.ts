@@ -247,3 +247,58 @@ export async function fetchOffersWithExtraction(
     };
   });
 }
+
+// ─── Persist computed scores to risk_scores ───
+
+export interface RiskScoreInput {
+  offerStrength: number;
+  closeProbability: number;
+  financialConfidence: number;
+  contingencyRisk: number;
+  timingRisk: number;
+  packageCompleteness: number;
+  factorDetails?: any;
+}
+
+/** Insert a new versioned risk_scores row for an offer. */
+export async function saveRiskScore(offerId: string, input: RiskScoreInput) {
+  const { data: latest } = await supabase
+    .from("risk_scores")
+    .select("version")
+    .eq("offer_id", offerId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const nextVersion = (latest?.version ?? 0) + 1;
+
+  const { error } = await supabase.from("risk_scores").insert({
+    offer_id: offerId,
+    version: nextVersion,
+    offer_strength: input.offerStrength,
+    close_probability: input.closeProbability,
+    financial_confidence: input.financialConfidence,
+    contingency_risk: input.contingencyRisk,
+    timing_risk: input.timingRisk,
+    package_completeness: input.packageCompleteness,
+    factor_details: input.factorDetails ?? null,
+  });
+  if (error) throw error;
+  return nextVersion;
+}
+
+/** Fetch the latest risk_scores row per offer for an analysis. */
+export async function fetchLatestRiskScores(offerIds: string[]) {
+  if (offerIds.length === 0) return {} as Record<string, any>;
+  const { data, error } = await supabase
+    .from("risk_scores")
+    .select("*")
+    .in("offer_id", offerIds)
+    .order("version", { ascending: false });
+  if (error) throw error;
+  const byOffer: Record<string, any> = {};
+  for (const row of data ?? []) {
+    if (!byOffer[row.offer_id]) byOffer[row.offer_id] = row;
+  }
+  return byOffer;
+}
