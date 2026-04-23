@@ -1,97 +1,247 @@
+import { useState } from 'react';
 import AppLayout from '@/components/AppLayout';
-import { Target, TrendingUp, Shield, Scale, RefreshCw, FileText } from 'lucide-react';
+import { sampleProperty, formatCurrency } from '@/data/sampleData';
+import { TrendingUp, Shield, Scale, RefreshCw, FileText, ArrowRight, Check, AlertTriangle } from 'lucide-react';
 
-const strategies = [
+/* ── Types ── */
+interface Term {
+  label: string;
+  value: string;
+  delta?: string;           // change vs. original offer
+  sentiment?: 'positive' | 'neutral' | 'caution';
+}
+
+interface Strategy {
+  id: string;
+  title: string;
+  subtitle: string;
+  icon: typeof TrendingUp;
+  accent: string;             // border / highlight color
+  iconBg: string;
+  targetOffer: string;        // offer id
+  counterPrice: number;
+  acceptanceLikelihood: number; // 0-100
+  netProceeds: string;
+  terms: Term[];
+  rationale: string;
+  risk: string;
+  recommended?: boolean;
+}
+
+/* ── Data ── */
+const strategies: Strategy[] = [
   {
+    id: 'maximize-price',
     title: 'Maximize Price',
+    subtitle: 'Push for top dollar from the strongest cash buyer',
     icon: TrendingUp,
-    color: 'bg-gold-light text-gold',
-    counterPrice: '$9,050,000',
-    timeline: '25 days',
-    contingencyChanges: 'Reduce inspection to 5 days, waive appraisal contingency',
-    leasebackPosition: '7-day rent-free leaseback granted',
-    deposit: '$300,000 earnest money required',
-    docRequests: 'Updated proof of funds within 48 hours',
-    rationale: 'The Nakamura Trust came in at $9.1M all-cash, which tells you they\'re serious and motivated. Countering at $9.05M — a modest $50K haircut — while tightening the inspection to 5 days is a move they\'ll likely accept. They\'re relocating from Tokyo and want this done. Offering a 7-day leaseback costs you very little and gives them one less reason to push back. This is your best shot at top dollar with a clean close.',
+    accent: 'border-accent/50',
+    iconBg: 'bg-accent/10 text-accent',
+    targetOffer: 'offer-a',
+    counterPrice: 9050000,
+    acceptanceLikelihood: 72,
+    netProceeds: '$8,920,000',
+    terms: [
+      { label: 'Counter Price', value: '$9,050,000', delta: '−$50K from their offer', sentiment: 'positive' },
+      { label: 'Close Timeline', value: '21 days', delta: 'Match their ask', sentiment: 'positive' },
+      { label: 'Inspection', value: '5 days only', delta: 'Down from 7', sentiment: 'positive' },
+      { label: 'Appraisal', value: 'Waived (cash)', sentiment: 'positive' },
+      { label: 'Earnest Money', value: '$300,000', delta: '+$25K from their offer', sentiment: 'positive' },
+      { label: 'Leaseback', value: '7-day rent-free', delta: 'Concession to buyer', sentiment: 'neutral' },
+      { label: 'Repairs', value: 'Sold as-is', sentiment: 'positive' },
+      { label: 'Doc Requests', value: 'Updated POF within 48 hours', sentiment: 'neutral' },
+    ],
+    rationale: 'The Nakamura Trust is relocating from Tokyo and came in $350K over asking in all cash. That\'s not a buyer who\'s testing the water — they need a house. Counter at $9.05M (only a $50K concession) and tighten the inspection to 5 days. Give them the 21-day close they want and a 7-day leaseback — both cost you nothing but make the counter feel collaborative rather than adversarial. At this price point, the $50K haircut is a rounding error for them, and the tighter inspection tells them you\'re serious about moving fast.',
+    risk: 'If Nakamura pushes back on the 5-day inspection, you have room to go to 7 without losing anything material. The real risk is overplaying — don\'t add terms that give a motivated cash buyer a reason to walk.',
   },
   {
+    id: 'maximize-certainty',
     title: 'Maximize Certainty',
+    subtitle: 'Lock in the most reliable path to close',
     icon: Shield,
-    color: 'bg-success/10 text-success',
-    counterPrice: '$8,850,000',
-    timeline: '28 days',
-    contingencyChanges: 'Accept standard inspection (10 days), require appraisal gap coverage up to $200K',
-    leasebackPosition: '14-day rent-free leaseback',
-    deposit: '$250,000 earnest money',
-    docRequests: 'None — package is complete',
-    rationale: 'If your priority is knowing this deal actually closes, the Chens are your best bet. Their package is flawless — every document in order, First Republic pre-approval, documented income. You\'re leaving about $200K on the table compared to the top-price path, but what you\'re buying is certainty. No last-minute surprises, no financing drama, no document gaps. Sometimes the smartest deal isn\'t the biggest number.',
+    accent: 'border-success/40',
+    iconBg: 'bg-success/10 text-success',
+    targetOffer: 'offer-b',
+    counterPrice: 8850000,
+    acceptanceLikelihood: 91,
+    netProceeds: '$8,710,000',
+    terms: [
+      { label: 'Counter Price', value: '$8,850,000', delta: '−$50K from their offer', sentiment: 'neutral' },
+      { label: 'Close Timeline', value: '30 days', delta: 'Match their ask', sentiment: 'positive' },
+      { label: 'Inspection', value: '10 days (standard)', delta: 'No change', sentiment: 'neutral' },
+      { label: 'Appraisal', value: 'Gap coverage up to $200K required', delta: 'New requirement', sentiment: 'caution' },
+      { label: 'Earnest Money', value: '$250,000', delta: '+$50K from their offer', sentiment: 'positive' },
+      { label: 'Leaseback', value: '14-day rent-free', delta: 'Extend their 7-day offer', sentiment: 'neutral' },
+      { label: 'Repairs', value: 'As-is with $15K credit', sentiment: 'neutral' },
+      { label: 'Doc Requests', value: 'None — package complete', sentiment: 'positive' },
+    ],
+    rationale: 'The Chens submitted the most complete package in this group — every document verified, First Republic pre-approval, full income documentation. You\'re not going to get $9M from this buyer, but what you\'re getting is a deal that actually closes. The key move is adding appraisal gap coverage: it\'s the one risk in an otherwise bulletproof offer. At $8.85M with gap protection, increased earnest money, and a 14-day leaseback, you\'re building a deal with almost no failure points. The $200K you leave on the table versus the top-price path is insurance against the deal that falls apart at day 40.',
+    risk: 'The appraisal gap requirement is the only ask that might create friction. First Republic borrowers can typically handle it, but if the Chens push back, consider reducing the coverage to $100K — still meaningful protection.',
   },
   {
+    id: 'best-balance',
     title: 'Best Balance',
+    subtitle: 'The most likely path to a deal both sides feel good about',
     icon: Scale,
-    color: 'bg-info/10 text-info',
-    counterPrice: '$8,950,000',
-    timeline: '28 days',
-    contingencyChanges: 'Reduce inspection to 7 days, maintain appraisal gap coverage',
-    leasebackPosition: '10-day rent-free leaseback',
-    deposit: '$275,000 earnest money',
-    docRequests: 'Verification of appraisal gap commitment',
-    rationale: 'The Kapoors hit a sweet spot that\'s easy to overlook. They already volunteered appraisal gap coverage — that\'s rare and signals real commitment. Counter them at $8.95M with a tighter inspection window and you\'ve got a deal that\'s $200K above asking, protected against low appraisal, and backed by Chase Private Client. The 10-day leaseback gives you breathing room without overcomplicating things. This is the path where you don\'t have to choose between price and peace of mind.',
+    accent: 'border-info/40',
+    iconBg: 'bg-info/10 text-info',
+    targetOffer: 'offer-e',
+    counterPrice: 8950000,
+    acceptanceLikelihood: 84,
+    netProceeds: '$8,820,000',
+    terms: [
+      { label: 'Counter Price', value: '$8,950,000', delta: '+$150K from their offer', sentiment: 'positive' },
+      { label: 'Close Timeline', value: '28 days', delta: 'Match their ask', sentiment: 'positive' },
+      { label: 'Inspection', value: '7 days', delta: 'Down from 10', sentiment: 'positive' },
+      { label: 'Appraisal', value: 'Maintain $200K gap coverage', delta: 'Already offered', sentiment: 'positive' },
+      { label: 'Earnest Money', value: '$275,000', delta: '+$95K from their offer', sentiment: 'positive' },
+      { label: 'Leaseback', value: '10-day rent-free', delta: 'Split their 14-day offer', sentiment: 'neutral' },
+      { label: 'Repairs', value: 'As-is, no credits', sentiment: 'positive' },
+      { label: 'Doc Requests', value: 'Written gap coverage confirmation', sentiment: 'neutral' },
+    ],
+    rationale: 'The Kapoors are the kind of buyer you build a deal around. They already volunteered appraisal gap coverage — unprompted — which tells you their agent understands how luxury deals collapse and prepared accordingly. Counter at $8.95M (a $150K bump they can absorb with 25% down through Chase Private Client), tighten inspection to 7 days, and bump the deposit to $275K. You\'re asking for more, but every ask is reasonable and they\'ve already signaled flexibility. The 10-day leaseback splits the difference on their 14-day offer — a small concession that demonstrates good faith. This is the path with the fewest hard conversations and the highest probability of both sides signing.',
+    risk: 'The $150K price increase is the main negotiation point. If they counter back at $8.9M, you\'re still $150K above asking with gap coverage and a clean structure. That\'s a strong deal by any measure.',
+    recommended: true,
   },
 ];
 
+/* ── Helpers ── */
+const sentimentIcon = (s?: string) => {
+  if (s === 'positive') return <Check className="w-3 h-3 text-success" strokeWidth={2} />;
+  if (s === 'caution') return <AlertTriangle className="w-3 h-3 text-warning" strokeWidth={1.5} />;
+  return null;
+};
+
+const likelihoodColor = (v: number) => {
+  if (v >= 85) return 'text-success';
+  if (v >= 70) return 'text-info';
+  return 'text-warning';
+};
+const likelihoodBar = (v: number) => {
+  if (v >= 85) return 'bg-success';
+  if (v >= 70) return 'bg-info';
+  return 'bg-warning';
+};
+
+/* ── Component ── */
 export default function CounterStrategy() {
+  const [selected, setSelected] = useState('best-balance');
+  const active = strategies.find(s => s.id === selected)!;
+  const targetOffer = sampleProperty.offers.find(o => o.id === active.targetOffer)!;
+
   return (
     <AppLayout>
-      <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
-        <div className="mb-2">
+      <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
+        {/* Header */}
+        <div>
           <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Strategy</p>
-          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Counter Strategies</h1>
+          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Counter Strategy Builder</h1>
+          <p className="text-[13px] text-muted-foreground font-body mt-2 max-w-2xl">
+            Three distinct paths — each targeting a different offer with a different thesis. Pick the one that matches what the seller values most.
+          </p>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-4">
-          {strategies.map((s, i) => (
-            <div key={i} className={`card-elevated p-6 lg:p-7 space-y-5 ${i === 2 ? 'border-accent/40' : ''}`}>
-              <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-sm flex items-center justify-center ${s.color}`}>
-                  <s.icon className="w-4 h-4" strokeWidth={1.5} />
-                </div>
-                <div>
-                  <h3 className="text-[13px] font-medium font-body">{s.title}</h3>
-                  {i === 2 && <span className="badge-gold">Recommended</span>}
-                </div>
-              </div>
-
-              <div className="space-y-3.5">
-                {[
-                  ['Counter Price', s.counterPrice],
-                  ['Timeline', s.timeline],
-                  ['Contingency Changes', s.contingencyChanges],
-                  ['Leaseback', s.leasebackPosition],
-                  ['Deposit', s.deposit],
-                  ['Doc Requests', s.docRequests],
-                ].map(([label, value]) => (
-                  <div key={label as string}>
-                    <p className="text-[10px] text-muted-foreground font-body tracking-[0.1em] uppercase mb-0.5">{label}</p>
-                    <p className="text-[13px] font-body">{value}</p>
+        {/* ── Strategy Selector ── */}
+        <div className="grid sm:grid-cols-3 gap-3">
+          {strategies.map((s) => {
+            const isActive = selected === s.id;
+            return (
+              <button
+                key={s.id}
+                onClick={() => setSelected(s.id)}
+                className={`text-left rounded-md border p-5 transition-all duration-300 ${
+                  isActive ? `${s.accent} bg-card shadow-sm` : 'border-border/40 bg-card hover:border-border'
+                }`}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`w-8 h-8 rounded-sm flex items-center justify-center ${s.iconBg}`}>
+                    <s.icon className="w-4 h-4" strokeWidth={1.5} />
                   </div>
-                ))}
-              </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-[13px] font-medium font-body text-foreground">{s.title}</h3>
+                      {s.recommended && <span className="badge-gold">Recommended</span>}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground font-body leading-relaxed mb-3">{s.subtitle}</p>
+                <div className="flex items-baseline gap-3">
+                  <span className="heading-display text-2xl text-foreground">{formatCurrency(s.counterPrice)}</span>
+                  <span className={`text-[11px] font-body font-medium ${likelihoodColor(s.acceptanceLikelihood)}`}>{s.acceptanceLikelihood}% likely</span>
+                </div>
+                {/* Likelihood bar */}
+                <div className="h-1 bg-muted rounded-full overflow-hidden mt-2">
+                  <div className={`h-full rounded-full transition-all duration-500 ${isActive ? likelihoodBar(s.acceptanceLikelihood) : 'bg-muted-foreground/20'}`} style={{ width: `${s.acceptanceLikelihood}%` }} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
 
-              <div className="border-t border-border/60 pt-4">
-                <p className="text-[12px] text-muted-foreground font-body leading-relaxed italic">{s.rationale}</p>
+        {/* ── Active Strategy Detail ── */}
+        <div className={`rounded-md border ${active.accent} bg-card`}>
+          {/* Target offer context */}
+          <div className="px-6 py-5 border-b border-border/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-1">Countering</p>
+              <p className="text-[15px] font-medium font-body text-foreground">{targetOffer.buyerName}</p>
+              <p className="text-[12px] text-muted-foreground font-body mt-0.5">
+                Original offer: {formatCurrency(targetOffer.offerPrice)} · {targetOffer.financingType} · {targetOffer.closeTimeline}
+              </p>
+            </div>
+            <div className="flex items-center gap-5">
+              <div className="text-right">
+                <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body">Acceptance</p>
+                <p className={`text-xl font-display ${likelihoodColor(active.acceptanceLikelihood)}`}>{active.acceptanceLikelihood}%</p>
               </div>
-
-              <div className="flex gap-2 pt-1">
-                <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-foreground text-background rounded-sm text-[11px] font-medium font-body hover:opacity-90 transition-opacity tracking-wide">
-                  <RefreshCw className="w-3 h-3" /> Revise
-                </button>
-                <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-border rounded-sm text-[11px] font-medium font-body hover:bg-muted/50 transition-colors tracking-wide">
-                  <FileText className="w-3 h-3" /> Summary
-                </button>
+              <div className="text-right">
+                <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body">Est. Net</p>
+                <p className="text-xl font-display text-foreground">{active.netProceeds}</p>
               </div>
             </div>
-          ))}
+          </div>
+
+          {/* Terms grid */}
+          <div className="px-6 py-5 border-b border-border/40">
+            <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-4">Counter Terms</p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
+              {active.terms.map((t) => (
+                <div key={t.label}>
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    {sentimentIcon(t.sentiment)}
+                    <p className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium">{t.label}</p>
+                  </div>
+                  <p className="text-[14px] font-body text-foreground font-medium">{t.value}</p>
+                  {t.delta && <p className="text-[11px] text-muted-foreground font-body mt-0.5">{t.delta}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Rationale */}
+          <div className="px-6 py-5 border-b border-border/40">
+            <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-3">Why This Works</p>
+            <p className="text-[13px] text-muted-foreground font-body leading-[1.7]">{active.rationale}</p>
+          </div>
+
+          {/* Risk */}
+          <div className="px-6 py-5 border-b border-border/40">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-warning" strokeWidth={1.5} />
+              <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium">What Could Go Wrong</p>
+            </div>
+            <p className="text-[13px] text-muted-foreground font-body leading-[1.7]">{active.risk}</p>
+          </div>
+
+          {/* Actions */}
+          <div className="px-6 py-4 flex items-center gap-3">
+            <button className="flex items-center gap-1.5 px-5 py-2.5 bg-foreground text-background rounded-sm text-[12px] font-medium font-body hover:opacity-90 transition-opacity tracking-wide">
+              <FileText className="w-3.5 h-3.5" /> Generate Counter Letter
+            </button>
+            <button className="flex items-center gap-1.5 px-5 py-2.5 border border-border rounded-sm text-[12px] font-medium font-body hover:bg-muted/50 transition-colors tracking-wide">
+              <RefreshCw className="w-3.5 h-3.5" /> Revise Terms
+            </button>
+          </div>
         </div>
       </div>
     </AppLayout>
