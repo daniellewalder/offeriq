@@ -2,16 +2,16 @@ import AppLayout from '@/components/AppLayout';
 import { CheckCircle, AlertTriangle, XCircle, Upload, ArrowRight } from 'lucide-react';
 
 const checklistItems = [
-  { label: 'Purchase Agreement', status: 'complete' as const, note: 'All required fields filled. Offer price, terms, and signatures present.' },
-  { label: 'Pre-Approval Letter', status: 'warning' as const, note: 'Letter is 45 days old. Recommend requesting an updated letter within 5 days of submission.' },
-  { label: 'Proof of Funds', status: 'complete' as const, note: 'Chase Private Client statement dated within 14 days. Sufficient funds verified.' },
-  { label: 'Proof of Income', status: 'complete' as const, note: 'W-2s and tax returns for past 2 years included.' },
-  { label: 'Earnest Money Commitment', status: 'warning' as const, note: 'Current deposit of $150K is below competitive threshold for this price range. Recommend $200K+.' },
-  { label: 'Buyer Cover Letter', status: 'missing' as const, note: 'No personal letter included. In competitive situations, a well-crafted letter can differentiate.' },
-  { label: 'Contingency Terms', status: 'warning' as const, note: '17-day inspection period is longer than market standard. Consider shortening to 10 days.' },
-  { label: 'Appraisal Gap Coverage', status: 'missing' as const, note: 'No gap coverage offered. Adding $150K–$200K coverage would significantly strengthen this offer.' },
-  { label: 'Close Timeline', status: 'complete' as const, note: '30-day close aligns with seller preferences per comparable listings.' },
-  { label: 'Disclosures Acknowledgment', status: 'complete' as const, note: 'All seller disclosures reviewed and acknowledged.' },
+  { label: 'Purchase Agreement', status: 'complete' as const, note: 'Looks good — all the key fields are filled in, price and terms are clear, and signatures are present. Nothing to flag here.' },
+  { label: 'Pre-Approval Letter', status: 'warning' as const, note: 'This letter is 45 days old, and most listing agents in this market will notice. Get an updated one dated within the last week — it takes a single phone call to your lender and it removes any question about whether the financing is still solid.' },
+  { label: 'Proof of Funds', status: 'complete' as const, note: 'Chase Private Client statement from two weeks ago showing sufficient funds. This is exactly what a listing agent wants to see — recent, from a recognized institution, with clear numbers.' },
+  { label: 'Proof of Income', status: 'complete' as const, note: 'Two years of W-2s and tax returns included. This tells the seller\'s side that your lender has real documentation to work with, not just a verbal pre-qual.' },
+  { label: 'Earnest Money Commitment', status: 'warning' as const, note: 'At $150K, this is on the low side for a $9M property. In competitive situations, listing agents read the deposit as a signal of how serious you are. Moving to $200K–$250K would put you in line with the strongest offers and doesn\'t change your actual risk — the money comes back at close.' },
+  { label: 'Buyer Cover Letter', status: 'missing' as const, note: 'Not every agent cares about these, but when you\'re competing against four or five other offers, a short, genuine letter can be the tiebreaker. Keep it professional — mention why this specific property matters, not your life story.' },
+  { label: 'Contingency Terms', status: 'warning' as const, note: 'A 17-day inspection period is longer than what the competing offers are likely to submit. In this market, 7–10 days is the norm for a well-maintained luxury property. Shortening this tells the seller you\'re not planning to use the inspection as a renegotiation tool.' },
+  { label: 'Appraisal Gap Coverage', status: 'missing' as const, note: 'This is the single most impactful addition you could make. In luxury markets, appraisals often come in below contract price simply because comparable sales data is thin. Offering $150K–$200K in gap coverage removes the seller\'s biggest concern about financed offers.' },
+  { label: 'Close Timeline', status: 'complete' as const, note: 'Thirty days is well-calibrated for this market. It gives your lender enough runway without making the seller feel like they\'re waiting around. Good instinct here.' },
+  { label: 'Disclosures Acknowledgment', status: 'complete' as const, note: 'All seller disclosures reviewed and acknowledged. This is a small detail that signals professionalism — a surprising number of offers come in without this step completed.' },
 ];
 
 const statusIcon = { complete: CheckCircle, warning: AlertTriangle, missing: XCircle };
@@ -72,14 +72,14 @@ export default function BuyerReadiness() {
 
         {/* Recommendations */}
         <div className="card-elevated p-6">
-          <h3 className="heading-display text-lg font-semibold mb-3">Recommendations to Strengthen</h3>
+          <h3 className="heading-display text-lg font-semibold mb-3">What Would Make This Offer Harder to Say No To</h3>
           <ul className="space-y-2">
             {[
-              'Request an updated pre-approval letter dated within 7 days of submission.',
-              'Increase earnest money deposit to $200,000+ to demonstrate seriousness.',
-              'Add appraisal gap coverage of $150K–$200K to protect against low appraisal.',
-              'Include a concise, professional buyer cover letter highlighting commitment.',
-              'Consider shortening inspection contingency to 10 days to match competitive offers.',
+              'Get a fresh pre-approval letter — the current one is stale and a sharp listing agent will use it to question your financing.',
+              'Bump the earnest money to $200K+. It\'s the easiest way to signal conviction, and you get it back at close anyway.',
+              'Add $150K–$200K in appraisal gap coverage. This is what separates good offers from winning offers in luxury markets where comps are sparse.',
+              'Write a brief, genuine cover letter. You\'re competing against trusts and LLCs — a real person with a real connection to the property stands out.',
+              'Shorten the inspection to 10 days. Seventeen days reads as "I\'m going to find reasons to renegotiate." Ten days reads as "I\'m committed."',
             ].map((rec, i) => (
               <li key={i} className="flex items-start gap-2 text-sm font-body">
                 <ArrowRight className="w-4 h-4 text-gold mt-0.5 flex-shrink-0" />

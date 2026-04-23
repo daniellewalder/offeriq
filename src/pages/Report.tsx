@@ -36,7 +36,7 @@ export default function Report() {
               </div>
             </div>
             <p className="text-sm text-muted-foreground font-body leading-relaxed">
-              All-cash at {formatCurrency(bestFit.offerPrice)} with minimal contingencies and a 21-day close. Strongest combination of price and execution certainty.
+              This is the offer you\'d write if you could design one from scratch. All-cash at {formatCurrency(bestFit.offerPrice)}, one short contingency, and a 21-day close. The Nakamura Trust is relocating and motivated — the kind of buyer who doesn\'t play games.
             </p>
           </div>
           <div className="card-elevated p-6">
@@ -50,7 +50,7 @@ export default function Report() {
               </div>
             </div>
             <p className="text-sm text-muted-foreground font-body leading-relaxed">
-              100% complete package with pre-approval and full documentation. {formatCurrency(safest.offerPrice)} with {safest.scores.closeProbability}% close probability.
+              If certainty is what matters most, the Chens are your answer. Every document in order, First Republic pre-approval, and a {safest.scores.closeProbability}% close probability. At {formatCurrency(safest.offerPrice)}, the price is strong — and you can actually count on it reaching the finish line.
             </p>
           </div>
           <div className="card-elevated p-6">
@@ -64,7 +64,7 @@ export default function Report() {
               </div>
             </div>
             <p className="text-sm text-muted-foreground font-body leading-relaxed">
-              {formatCurrency(highest.offerPrice)} — highest price but carries three contingencies, a 45-day close, and leaseback complexity. Elevated risk profile.
+              {formatCurrency(highest.offerPrice)} is the biggest number on the table, but it comes with baggage — three contingencies, a 45-day runway, and a leaseback that adds complexity. The price is appealing; the question is whether you\'re willing to spend two months finding out if it actually closes.
             </p>
           </div>
           <div className="card-elevated p-6">
@@ -78,7 +78,7 @@ export default function Report() {
               </div>
             </div>
             <p className="text-sm text-muted-foreground font-body leading-relaxed">
-              Aligns with seller goals of fast close, strong price, and minimal negotiation risk. Cash offer with 7-day inspection only.
+              When you map this against what the seller actually cares about — fast close, strong price, no repair drama — the Nakamura Trust checks every box. Cash, minimal contingencies, and a buyer who needs to close.
             </p>
           </div>
         </div>
@@ -91,10 +91,10 @@ export default function Report() {
           </div>
           <ul className="space-y-3">
             {[
-              'Offer D (Ashford) — Three contingencies create multiple failure points. 45-day timeline is the longest and introduces market risk.',
-              'Offer C (Westside Holdings) — LLC structure requires additional verification. Operating agreement still pending review.',
-              'Offer B (Chen) — Standard appraisal contingency could stall if property appraises below contract price.',
-              'Market exposure — Extended negotiation period with multiple counters increases risk of buyer fatigue and withdrawal.',
+              'The Ashford offer looks great at $9.25M, but three contingencies over 45 days means you\'re essentially giving the buyer a month and a half of free optionality. If the market softens or they get cold feet, they have multiple clean exit points.',
+              'Westside Holdings is an LLC — and the operating agreement still hasn\'t been reviewed. Until you know who\'s actually behind this entity and how decisions get made, there\'s an unresolved question mark on this deal.',
+              'The Chen offer has a standard appraisal contingency, and luxury comps in Bel Air can be thin. If the appraisal comes in low, you\'re back at the negotiating table. Consider requesting gap coverage in any counter.',
+              'Be mindful of timeline — juggling multiple counters increases the risk of buyer fatigue. The strongest buyers won\'t wait around indefinitely. Move with purpose.',
             ].map((risk, i) => (
               <li key={i} className="flex items-start gap-2 text-sm font-body text-muted-foreground">
                 <span className="text-warning mt-0.5">•</span>
@@ -106,13 +106,13 @@ export default function Report() {
 
         {/* Best Negotiation Path */}
         <div className="card-elevated p-6">
-          <h3 className="heading-display text-lg font-semibold mb-3">Recommended Negotiation Path</h3>
+          <h3 className="heading-display text-lg font-semibold mb-3">How We\'d Play This</h3>
           <div className="space-y-3">
             {[
-              'Counter Offer A (Nakamura Trust) at $9,050,000 with a 5-day inspection and 25-day close.',
-              'Simultaneously counter Offer E (Kapoor) at $8,950,000 requiring appraisal gap verification.',
-              'If Nakamura accepts, proceed to close. If not, Kapoor provides a strong fallback.',
-              'Offer B (Chen) remains a safety net with the most complete package and highest certainty.',
+              'Lead with the Nakamura Trust. Counter at $9.05M, tighten inspection to 5 days, and offer the 7-day leaseback. They\'re motivated and cash — this is your best path to top dollar.',
+              'Run a parallel counter to the Kapoors at $8.95M. Require written confirmation of their appraisal gap coverage. If Nakamura falls through, you want this locked and ready.',
+              'If Nakamura accepts, you\'re done — best price, fastest close, cleanest deal. If they counter back, you have the Kapoors as a strong fallback without losing momentum.',
+              'Keep the Chens in your back pocket. They\'re not going anywhere — their package is complete and they\'re flexible on timeline. If everything else falls apart, this is the deal that still closes.',
             ].map((step, i) => (
               <div key={i} className="flex items-start gap-3">
                 <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -126,9 +126,9 @@ export default function Report() {
 
         {/* Suggested Counter */}
         <div className="card-elevated p-6">
-          <h3 className="heading-display text-lg font-semibold mb-3">Suggested Counter Strategy</h3>
+          <h3 className="heading-display text-lg font-semibold mb-3">The Bottom Line</h3>
           <p className="text-sm text-muted-foreground font-body leading-relaxed mb-4">
-            The <strong className="text-foreground">Best Balance</strong> strategy targets a counter at $8,950,000 with shortened contingencies, increased earnest money, and a 10-day rent-free leaseback. This approach optimizes for a combination of price, certainty, and seller flexibility.
+            You have five real offers on a property that\'s been well-received by the market. The strongest play is to counter Nakamura aggressively on terms while keeping the Kapoors as a live backup. Don\'t get distracted by Ashford\'s headline number — the execution risk isn\'t worth it unless they\'re willing to drop at least two contingencies. And if certainty matters more than squeezing out every last dollar, the Chens are sitting right there with a bulletproof package.
           </p>
           <button className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium font-body hover:opacity-90 transition-opacity">
             View Full Counter Strategy <ArrowRight className="w-4 h-4" />
