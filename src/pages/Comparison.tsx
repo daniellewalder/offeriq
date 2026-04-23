@@ -1,18 +1,30 @@
 import AppLayout from '@/components/AppLayout';
 import { sampleProperty, formatCurrency } from '@/data/sampleData';
-import { useMemo, useState } from 'react';
-import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle, Sparkles, Zap, MessageSquare, ArrowRight, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle, Sparkles, Zap, MessageSquare, ArrowRight, Loader2, Zap as ZapIcon, Gauge, FileWarning } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { fetchLatestAnalysisForUser, fetchOffersWithExtraction } from '@/lib/offerService';
+import { adaptOffer } from '@/lib/offerAdapter';
+import { Skeleton } from '@/components/ui/skeleton';
 
-type SortKey = 'price' | 'risk' | 'close' | 'financial' | 'contingencies';
+type SortKey =
+  | 'price'
+  | 'closeProb'
+  | 'financial'
+  | 'contingencyRisk'
+  | 'timingRisk'
+  | 'completeness';
 type Offer = (typeof sampleProperty.offers)[0];
+type OfferWithMeta = Offer & { missingItems?: string[]; notableRisks?: string[]; notableStrengths?: string[] };
 
 const sortOptions: { key: SortKey; label: string }[] = [
   { key: 'price', label: 'Highest Price' },
-  { key: 'risk', label: 'Lowest Risk' },
-  { key: 'close', label: 'Shortest Close' },
-  { key: 'financial', label: 'Strongest Financial' },
-  { key: 'contingencies', label: 'Fewest Contingencies' },
+  { key: 'closeProb', label: 'Close Probability' },
+  { key: 'financial', label: 'Financial Confidence' },
+  { key: 'contingencyRisk', label: 'Contingency Risk' },
+  { key: 'timingRisk', label: 'Timing Risk' },
+  { key: 'completeness', label: 'Completeness' },
 ];
 
 /* ── Helpers ── */
@@ -35,15 +47,59 @@ const Bar = ({ pct, color }: { pct: number; color: string }) => (
 
 export default function Comparison() {
   const [sortBy, setSortBy] = useState<SortKey>('price');
-  const offers = sampleProperty.offers;
+  const [offers, setOffers] = useState<OfferWithMeta[]>(sampleProperty.offers as OfferWithMeta[]);
+  const [property, setProperty] = useState({
+    address: sampleProperty.address,
+    listingPrice: sampleProperty.listingPrice,
+    sellerNotes: sampleProperty.sellerNotes,
+    sellerGoals: sampleProperty.sellerGoals,
+  });
+  const [loading, setLoading] = useState(true);
+  const [usingDemo, setUsingDemo] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setLoading(false); return; }
+        const analysis = await fetchLatestAnalysisForUser(user.id);
+        if (!analysis) { setLoading(false); return; }
+        const rows = await fetchOffersWithExtraction(analysis.id);
+        if (cancelled) return;
+        const listingPrice = Number(analysis.properties?.listing_price ?? sampleProperty.listingPrice);
+        if (rows.length === 0) { setLoading(false); return; }
+        const adapted = rows.map(r => adaptOffer(r, listingPrice));
+        setOffers(adapted);
+        setProperty({
+          address: analysis.properties?.address ?? sampleProperty.address,
+          listingPrice,
+          sellerNotes: analysis.properties?.seller_notes ?? sampleProperty.sellerNotes,
+          sellerGoals: analysis.properties?.seller_goals ?? sampleProperty.sellerGoals,
+        });
+        setUsingDemo(false);
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e.message ?? 'Failed to load offers');
+          toast({ title: 'Could not load live offers', description: 'Showing demo data instead.', variant: 'destructive' });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [toast]);
 
   const sorted = useMemo(() => [...offers].sort((a, b) => {
     switch (sortBy) {
       case 'price': return b.offerPrice - a.offerPrice;
-      case 'risk': return a.scores.contingencyRisk - b.scores.contingencyRisk;
-      case 'close': return a.closeDays - b.closeDays;
+      case 'closeProb': return b.scores.closeProbability - a.scores.closeProbability;
       case 'financial': return b.scores.financialConfidence - a.scores.financialConfidence;
-      case 'contingencies': return a.contingencies.length - b.contingencies.length;
+      case 'contingencyRisk': return a.scores.contingencyRisk - b.scores.contingencyRisk;
+      case 'timingRisk': return a.scores.timingRisk - b.scores.timingRisk;
+      case 'completeness': return b.scores.packageCompleteness - a.scores.packageCompleteness;
     }
   }), [sortBy, offers]);
 
@@ -55,16 +111,31 @@ export default function Comparison() {
   const maxStrength = bestVal(offers, o => o.scores.offerStrength, 'max');
   const maxCloseProb = bestVal(offers, o => o.scores.closeProbability, 'max');
 
-  /* Spotlight offers */
+  /* Spotlight offers — Highest, Safest, Cleanest, Fastest, Best Balance */
   const highest = offers.reduce((a, b) => a.offerPrice > b.offerPrice ? a : b);
   const safest = offers.reduce((a, b) => a.scores.closeProbability > b.scores.closeProbability ? a : b);
-  const bestBalance = offers.reduce((a, b) => a.scores.offerStrength > b.scores.offerStrength ? a : b);
   const cleanest = offers.reduce((a, b) => a.contingencies.length < b.contingencies.length ? a : b);
+  const fastest = offers.reduce((a, b) => a.closeDays < b.closeDays ? a : b);
+  const bestBalance = offers.reduce((a, b) => a.scores.offerStrength > b.scores.offerStrength ? a : b);
+
+  // Per-offer dynamic badge map for inline pills
+  const badgeMap = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    const push = (id: string, label: string) => { (m[id] ||= []).push(label); };
+    push(highest.id, 'Highest');
+    push(safest.id, 'Safest');
+    push(cleanest.id, 'Cleanest');
+    push(fastest.id, 'Fastest');
+    push(bestBalance.id, 'Best Balance');
+    return m;
+  }, [highest, safest, cleanest, fastest, bestBalance]);
 
   const spotlights = [
-    { label: 'Highest Price', icon: Crown, offer: highest, value: formatCurrency(highest.offerPrice), sub: priceDeltaStr(highest) + ' vs. list', accent: 'border-accent/50 bg-accent/[0.03]' },
+    { label: 'Highest Price', icon: Crown, offer: highest, value: formatCurrency(highest.offerPrice), sub: priceDelta(highest) >= 0 ? `+${formatCurrency(priceDelta(highest))} vs. list` : `${formatCurrency(priceDelta(highest))} vs. list`, accent: 'border-accent/50 bg-accent/[0.03]' },
     { label: 'Safest Close', icon: Shield, offer: safest, value: `${safest.scores.closeProbability}%`, sub: 'close probability', accent: 'border-success/30 bg-success/[0.03]' },
-    { label: 'Best Balance', icon: Scale, offer: bestBalance, value: `${bestBalance.scores.offerStrength}/100`, sub: 'overall strength', accent: 'border-info/30 bg-info/[0.03]' },
+    { label: 'Cleanest', icon: CheckCircle, offer: cleanest, value: `${cleanest.contingencies.length}`, sub: cleanest.contingencies.length === 1 ? 'contingency' : 'contingencies', accent: 'border-info/30 bg-info/[0.03]' },
+    { label: 'Fastest', icon: ZapIcon, offer: fastest, value: `${fastest.closeDays}d`, sub: 'to close', accent: 'border-warning/30 bg-warning/[0.03]' },
+    { label: 'Best Balance', icon: Scale, offer: bestBalance, value: `${bestBalance.scores.offerStrength}/100`, sub: 'overall strength', accent: 'border-accent/60 bg-accent/[0.04]' },
   ];
 
   const isBest = (o: Offer, val: number | string, best: number | string) => val === best;
@@ -76,9 +147,10 @@ export default function Comparison() {
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
           <div>
             <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Comparison</p>
-            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">{sampleProperty.address}</h1>
+            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">{property.address}</h1>
             <p className="text-[13px] text-muted-foreground font-body mt-2">
-              {offers.length} offers · Listed at {formatCurrency(sampleProperty.listingPrice)}
+              {offers.length} offers · Listed at {formatCurrency(property.listingPrice)}
+              {usingDemo && <span className="ml-2 text-accent">· Demo data</span>}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -99,8 +171,14 @@ export default function Comparison() {
           </div>
         </div>
 
+        {loading && (
+          <div className="grid sm:grid-cols-5 gap-4">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-md" />)}
+          </div>
+        )}
+
         {/* ── Spotlight Cards ── */}
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {spotlights.map((sp) => (
             <div key={sp.label} className={`rounded-md border p-5 ${sp.accent}`}>
               <div className="flex items-center gap-2 mb-3">
@@ -121,6 +199,7 @@ export default function Comparison() {
           cleanest={cleanest}
           bestBalance={bestBalance}
           offers={offers}
+          property={property}
         />
 
         {/* ── Key Terms Comparison ── */}
@@ -135,8 +214,10 @@ export default function Comparison() {
               </div>
               {sorted.map((o) => {
                 const best = o.offerPrice === maxPrice;
-                const delta = priceDelta(o);
-                const pct = ((o.offerPrice - 8500000) / (9300000 - 8500000)) * 100;
+                const delta = o.offerPrice - property.listingPrice;
+                const minP = bestVal(offers, x => x.offerPrice, 'min');
+                const range = Math.max(maxPrice - minP, 1);
+                const pct = ((o.offerPrice - minP) / range) * 100;
                 return (
                   <div key={o.id} className={`flex-1 min-w-[160px] p-4 border-l border-border/40 ${best ? 'bg-accent/[0.04]' : ''}`}>
                     <p className={`font-display text-xl ${best ? 'text-foreground font-medium' : 'text-foreground font-light'}`}>
@@ -183,7 +264,9 @@ export default function Comparison() {
               </div>
               {sorted.map((o) => {
                 const best = o.closeDays === minClose;
-                const pct = ((45 - o.closeDays) / (45 - 14)) * 100;
+                const maxC = bestVal(offers, x => x.closeDays, 'max');
+                const range = Math.max(maxC - minClose, 1);
+                const pct = ((maxC - o.closeDays) / range) * 100;
                 return (
                   <div key={o.id} className={`flex-1 min-w-[160px] p-4 border-l border-border/40 ${best ? 'bg-info/[0.03]' : ''}`}>
                     <div className="flex items-center gap-2">
@@ -292,7 +375,7 @@ export default function Comparison() {
                 <div key={o.id} className="flex-1 min-w-[160px] p-4 border-l border-border/40">
                   <p className="text-[13px] font-medium font-body text-foreground">{o.buyerName}</p>
                   <div className="flex gap-1 mt-1 flex-wrap">
-                    {o.labels.map(l => <span key={l} className="badge-gold">{l}</span>)}
+                    {(badgeMap[o.id] ?? []).map(l => <span key={l} className="badge-gold">{l}</span>)}
                   </div>
                 </div>
               ))}
@@ -376,11 +459,70 @@ export default function Comparison() {
         {/* ── Seller Context ── */}
         <div className="card-elevated p-6">
           <h3 className="heading-display text-xl mb-4">Seller Context</h3>
-          <p className="text-[13px] text-muted-foreground font-body mb-4 leading-relaxed">{sampleProperty.sellerNotes}</p>
+          <p className="text-[13px] text-muted-foreground font-body mb-4 leading-relaxed">{property.sellerNotes}</p>
           <div className="flex flex-wrap gap-2">
-            {sampleProperty.sellerGoals.map(g => (
+            {(property.sellerGoals ?? []).map(g => (
               <span key={g} className="badge-gold">{g}</span>
             ))}
+          </div>
+        </div>
+
+        {/* ── Missing Items & Weak Points ── */}
+        <div>
+          <p className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body font-medium mb-4">Missing Items & Weak Points</p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {sorted.map(o => {
+              const missing = o.missingItems ?? [];
+              const risks = o.notableRisks ?? [];
+              const strengths = o.notableStrengths ?? [];
+              const isClean = missing.length === 0 && risks.length === 0;
+              return (
+                <div key={o.id} className="card-elevated p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[13px] font-medium font-body text-foreground">{o.buyerName}</p>
+                    <span className={`text-[10px] font-body px-2 py-0.5 rounded ${o.scores.packageCompleteness >= 90 ? 'bg-success/10 text-success' : o.scores.packageCompleteness >= 70 ? 'bg-warning/10 text-warning' : 'bg-destructive/10 text-destructive'}`}>
+                      {o.scores.packageCompleteness}% complete
+                    </span>
+                  </div>
+                  {missing.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <FileWarning className="w-3.5 h-3.5 text-destructive" strokeWidth={1.5} />
+                        <span className="text-[10px] tracking-wider uppercase text-destructive font-body font-medium">Missing</span>
+                      </div>
+                      <ul className="space-y-0.5">
+                        {missing.map(m => <li key={m} className="text-[12px] text-muted-foreground font-body">· {m}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {risks.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <AlertTriangle className="w-3.5 h-3.5 text-warning" strokeWidth={1.5} />
+                        <span className="text-[10px] tracking-wider uppercase text-warning font-body font-medium">Weak points</span>
+                      </div>
+                      <ul className="space-y-0.5">
+                        {risks.map(r => <li key={r} className="text-[12px] text-muted-foreground font-body">· {r}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {strengths.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <CheckCircle className="w-3.5 h-3.5 text-success" strokeWidth={1.5} />
+                        <span className="text-[10px] tracking-wider uppercase text-success font-body font-medium">Strengths</span>
+                      </div>
+                      <ul className="space-y-0.5">
+                        {strengths.map(s => <li key={s} className="text-[12px] text-muted-foreground font-body">· {s}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {isClean && strengths.length === 0 && (
+                    <p className="text-[12px] text-muted-foreground font-body italic">No flagged items.</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -473,12 +615,14 @@ function AIStrategistPanel({
   cleanest,
   bestBalance,
   offers,
+  property,
 }: {
   highest: Offer;
   safest: Offer;
   cleanest: Offer;
   bestBalance: Offer;
   offers: Offer[];
+  property: { address: string; listingPrice: number };
 }) {
   const [isOpen, setIsOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -521,7 +665,7 @@ function AIStrategistPanel({
         },
         body: JSON.stringify({
           offers: offersPayload,
-          property: { address: sampleProperty.address, listingPrice: sampleProperty.listingPrice },
+          property: { address: property.address, listingPrice: property.listingPrice },
         }),
       });
 
