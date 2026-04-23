@@ -15,10 +15,15 @@ export default {
     extend: {
       colors: {
         border: "hsl(var(--border))",
+        "border-strong": "hsl(var(--border-strong))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+        "surface-2": "hsl(var(--surface-2))",
+        "surface-3": "hsl(var(--surface-3))",
+        bone: "hsl(var(--bone))",
+        obsidian: "hsl(var(--obsidian))",
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -53,6 +58,7 @@ export default {
         },
         gold: {
           DEFAULT: "hsl(var(--gold))",
+          soft: "hsl(var(--gold-soft))",
           light: "hsl(var(--gold-light))",
         },
         ivory: "hsl(var(--ivory))",
@@ -81,6 +87,25 @@ export default {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        xl: "calc(var(--radius) + 4px)",
+        "2xl": "calc(var(--radius) + 8px)",
+      },
+      boxShadow: {
+        xs: "var(--shadow-xs)",
+        sm: "var(--shadow-sm)",
+        md: "var(--shadow-md)",
+        lg: "var(--shadow-lg)",
+        luxe: "var(--shadow-md), var(--shadow-inset)",
+      },
+      backgroundImage: {
+        "gradient-paper": "var(--gradient-paper)",
+        "gradient-gold": "var(--gradient-gold)",
+        "gradient-ink": "var(--gradient-ink)",
+      },
+      letterSpacing: {
+        tightest: "-0.035em",
+        editorial: "-0.025em",
+        wider2: "0.18em",
       },
       keyframes: {
         "accordion-down": {
