@@ -12,7 +12,7 @@ const strategies = [
     leasebackPosition: '7-day rent-free leaseback granted',
     deposit: '$300,000 earnest money required',
     docRequests: 'Updated proof of funds within 48 hours',
-    rationale: 'Counter Offer A (Nakamura Trust) at $9.05M — a modest reduction from their $9.1M all-cash offer in exchange for shortened inspection and faster close. The buyer\'s strong cash position and relocation urgency support acceptance at near-full price.',
+    rationale: 'The Nakamura Trust came in at $9.1M all-cash, which tells you they\'re serious and motivated. Countering at $9.05M — a modest $50K haircut — while tightening the inspection to 5 days is a move they\'ll likely accept. They\'re relocating from Tokyo and want this done. Offering a 7-day leaseback costs you very little and gives them one less reason to push back. This is your best shot at top dollar with a clean close.',
   },
   {
     title: 'Maximize Certainty',
@@ -24,7 +24,7 @@ const strategies = [
     leasebackPosition: '14-day rent-free leaseback',
     deposit: '$250,000 earnest money',
     docRequests: 'None — package is complete',
-    rationale: 'Counter Offer B (Chen) with full package completeness. First Republic pre-approval and documented income provide highest certainty of close. Moderate price reduction compensated by deal security.',
+    rationale: 'If your priority is knowing this deal actually closes, the Chens are your best bet. Their package is flawless — every document in order, First Republic pre-approval, documented income. You\'re leaving about $200K on the table compared to the top-price path, but what you\'re buying is certainty. No last-minute surprises, no financing drama, no document gaps. Sometimes the smartest deal isn\'t the biggest number.',
   },
   {
     title: 'Best Balance',
@@ -36,7 +36,7 @@ const strategies = [
     leasebackPosition: '10-day rent-free leaseback',
     deposit: '$275,000 earnest money',
     docRequests: 'Verification of appraisal gap commitment',
-    rationale: 'Hybrid approach targeting Offer E (Kapoor) — combines strong financial backing and appraisal gap coverage with a price bump. The Kapoors\' flexibility on terms makes this a high-probability acceptance.',
+    rationale: 'The Kapoors hit a sweet spot that\'s easy to overlook. They already volunteered appraisal gap coverage — that\'s rare and signals real commitment. Counter them at $8.95M with a tighter inspection window and you\'ve got a deal that\'s $200K above asking, protected against low appraisal, and backed by Chase Private Client. The 10-day leaseback gives you breathing room without overcomplicating things. This is the path where you don\'t have to choose between price and peace of mind.',
   },
 ];
 
