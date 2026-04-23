@@ -55,8 +55,8 @@ const strategies: Strategy[] = [
       { label: 'Repairs', value: 'Sold as-is', sentiment: 'positive' },
       { label: 'Doc Requests', value: 'Updated POF within 48 hours', sentiment: 'neutral' },
     ],
-    rationale: 'The Nakamura Trust is relocating from Tokyo and came in $350K over asking in all cash. That\'s not a buyer who\'s testing the water — they need a house. Counter at $9.05M (only a $50K concession) and tighten the inspection to 5 days. Give them the 21-day close they want and a 7-day leaseback — both cost you nothing but make the counter feel collaborative rather than adversarial. At this price point, the $50K haircut is a rounding error for them, and the tighter inspection tells them you\'re serious about moving fast.',
-    risk: 'If Nakamura pushes back on the 5-day inspection, you have room to go to 7 without losing anything material. The real risk is overplaying — don\'t add terms that give a motivated cash buyer a reason to walk.',
+    rationale: "The Nakamura Trust is relocating from Tokyo and came in $350K over asking in all cash. That's not a buyer who's testing the water — they need a house. Counter at $9.05M (only a $50K concession) and tighten the inspection to 5 days. Give them the 21-day close they want and a 7-day leaseback — both cost you nothing but make the counter feel collaborative rather than adversarial. At this price point, the $50K haircut is a rounding error for them, and the tighter inspection tells them you're serious about moving fast.",
+    risk: "If Nakamura pushes back on the 5-day inspection, you have room to go to 7 without losing anything material. The real risk is overplaying — don't add terms that give a motivated cash buyer a reason to walk.",
   },
   {
     id: 'maximize-certainty',
@@ -79,7 +79,7 @@ const strategies: Strategy[] = [
       { label: 'Repairs', value: 'As-is with $15K credit', sentiment: 'neutral' },
       { label: 'Doc Requests', value: 'None — package complete', sentiment: 'positive' },
     ],
-    rationale: 'The Chens submitted the most complete package in this group — every document verified, First Republic pre-approval, full income documentation. You\'re not going to get $9M from this buyer, but what you\'re getting is a deal that actually closes. The key move is adding appraisal gap coverage: it\'s the one risk in an otherwise bulletproof offer. At $8.85M with gap protection, increased earnest money, and a 14-day leaseback, you\'re building a deal with almost no failure points. The $200K you leave on the table versus the top-price path is insurance against the deal that falls apart at day 40.',
+    rationale: "The Chens submitted the most complete package in this group — every document verified, First Republic pre-approval, full income documentation. You're not going to get $9M from this buyer, but what you're getting is a deal that actually closes. The key move is adding appraisal gap coverage: it's the one risk in an otherwise bulletproof offer. At $8.85M with gap protection, increased earnest money, and a 14-day leaseback, you're building a deal with almost no failure points. The $200K you leave on the table versus the top-price path is insurance against the deal that falls apart at day 40.",
     risk: 'The appraisal gap requirement is the only ask that might create friction. First Republic borrowers can typically handle it, but if the Chens push back, consider reducing the coverage to $100K — still meaningful protection.',
   },
   {
@@ -103,8 +103,8 @@ const strategies: Strategy[] = [
       { label: 'Repairs', value: 'As-is, no credits', sentiment: 'positive' },
       { label: 'Doc Requests', value: 'Written gap coverage confirmation', sentiment: 'neutral' },
     ],
-    rationale: 'The Kapoors are the kind of buyer you build a deal around. They already volunteered appraisal gap coverage — unprompted — which tells you their agent understands how luxury deals collapse and prepared accordingly. Counter at $8.95M (a $150K bump they can absorb with 25% down through Chase Private Client), tighten inspection to 7 days, and bump the deposit to $275K. You\'re asking for more, but every ask is reasonable and they\'ve already signaled flexibility. The 10-day leaseback splits the difference on their 14-day offer — a small concession that demonstrates good faith. This is the path with the fewest hard conversations and the highest probability of both sides signing.',
-    risk: 'The $150K price increase is the main negotiation point. If they counter back at $8.9M, you\'re still $150K above asking with gap coverage and a clean structure. That\'s a strong deal by any measure.',
+    rationale: "The Kapoors are the kind of buyer you build a deal around. They already volunteered appraisal gap coverage — unprompted — which tells you their agent understands how luxury deals collapse and prepared accordingly. Counter at $8.95M (a $150K bump they can absorb with 25% down through Chase Private Client), tighten inspection to 7 days, and bump the deposit to $275K. You're asking for more, but every ask is reasonable and they've already signaled flexibility. The 10-day leaseback splits the difference on their 14-day offer — a small concession that demonstrates good faith. This is the path with the fewest hard conversations and the highest probability of both sides signing.",
+    risk: "The $150K price increase is the main negotiation point. If they counter back at $8.9M, you're still $150K above asking with gap coverage and a clean structure. That's a strong deal by any measure.",
     recommended: true,
   },
 ];

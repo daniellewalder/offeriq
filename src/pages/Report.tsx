@@ -91,10 +91,10 @@ export default function Report() {
           </div>
           <ul className="space-y-3">
             {[
-              'The Ashford offer looks great at $9.25M, but three contingencies over 45 days means you\'re essentially giving the buyer a month and a half of free optionality. If the market softens or they get cold feet, they have multiple clean exit points.',
-              'Westside Holdings is an LLC — and the operating agreement still hasn\'t been reviewed. Until you know who\'s actually behind this entity and how decisions get made, there\'s an unresolved question mark on this deal.',
-              'The Chen offer has a standard appraisal contingency, and luxury comps in Bel Air can be thin. If the appraisal comes in low, you\'re back at the negotiating table. Consider requesting gap coverage in any counter.',
-              'Be mindful of timeline — juggling multiple counters increases the risk of buyer fatigue. The strongest buyers won\'t wait around indefinitely. Move with purpose.',
+              "The Ashford offer looks great at $9.25M, but three contingencies over 45 days means you're essentially giving the buyer a month and a half of free optionality. If the market softens or they get cold feet, they have multiple clean exit points.",
+              "Westside Holdings is an LLC — and the operating agreement still hasn't been reviewed. Until you know who's actually behind this entity and how decisions get made, there's an unresolved question mark on this deal.",
+              "The Chen offer has a standard appraisal contingency, and luxury comps in Bel Air can be thin. If the appraisal comes in low, you're back at the negotiating table. Consider requesting gap coverage in any counter.",
+              "Be mindful of timeline — juggling multiple counters increases the risk of buyer fatigue. The strongest buyers won't wait around indefinitely. Move with purpose.",
             ].map((risk, i) => (
               <li key={i} className="flex items-start gap-2 text-sm font-body text-muted-foreground">
                 <span className="text-warning mt-0.5">•</span>
@@ -109,10 +109,10 @@ export default function Report() {
           <h3 className="heading-display text-lg font-semibold mb-3">How We\'d Play This</h3>
           <div className="space-y-3">
             {[
-              'Lead with the Nakamura Trust. Counter at $9.05M, tighten inspection to 5 days, and offer the 7-day leaseback. They\'re motivated and cash — this is your best path to top dollar.',
+              "Lead with the Nakamura Trust. Counter at $9.05M, tighten inspection to 5 days, and offer the 7-day leaseback. They're motivated and cash — this is your best path to top dollar.",
               'Run a parallel counter to the Kapoors at $8.95M. Require written confirmation of their appraisal gap coverage. If Nakamura falls through, you want this locked and ready.',
-              'If Nakamura accepts, you\'re done — best price, fastest close, cleanest deal. If they counter back, you have the Kapoors as a strong fallback without losing momentum.',
-              'Keep the Chens in your back pocket. They\'re not going anywhere — their package is complete and they\'re flexible on timeline. If everything else falls apart, this is the deal that still closes.',
+              "If Nakamura accepts, you're done — best price, fastest close, cleanest deal. If they counter back, you have the Kapoors as a strong fallback without losing momentum.",
+              "Keep the Chens in your back pocket. They're not going anywhere — their package is complete and they're flexible on timeline. If everything else falls apart, this is the deal that still closes.",
             ].map((step, i) => (
               <div key={i} className="flex items-start gap-3">
                 <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0 mt-0.5">
