@@ -19,9 +19,6 @@ import Report from "./pages/Report.tsx";
 import SellerPortal from "./pages/SellerPortal.tsx";
 import SellerPresent from "./pages/SellerPresent.tsx";
 import SellerReportPDF from "./pages/SellerReportPDF.tsx";
-import Auth from "./pages/Auth.tsx";
-import ProtectedRoute from "./components/ProtectedRoute.tsx";
-
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -32,18 +29,17 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/new-analysis" element={<ProtectedRoute><NewAnalysis /></ProtectedRoute>} />
-          <Route path="/offer-intake" element={<ProtectedRoute><OfferIntake /></ProtectedRoute>} />
-          <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
-          <Route path="/risk-scoring" element={<ProtectedRoute><RiskScoring /></ProtectedRoute>} />
-          <Route path="/priorities" element={<ProtectedRoute><SellerPriorities /></ProtectedRoute>} />
-          <Route path="/leverage" element={<ProtectedRoute><Leverage /></ProtectedRoute>} />
-          <Route path="/counter-strategy" element={<ProtectedRoute><CounterStrategy /></ProtectedRoute>} />
-          <Route path="/delta-view" element={<ProtectedRoute><DeltaView /></ProtectedRoute>} />
-          <Route path="/buyer-readiness" element={<ProtectedRoute><BuyerReadiness /></ProtectedRoute>} />
-          <Route path="/report" element={<ProtectedRoute><Report /></ProtectedRoute>} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/new-analysis" element={<NewAnalysis />} />
+          <Route path="/offer-intake" element={<OfferIntake />} />
+          <Route path="/comparison" element={<Comparison />} />
+          <Route path="/risk-scoring" element={<RiskScoring />} />
+          <Route path="/priorities" element={<SellerPriorities />} />
+          <Route path="/leverage" element={<Leverage />} />
+          <Route path="/counter-strategy" element={<CounterStrategy />} />
+          <Route path="/delta-view" element={<DeltaView />} />
+          <Route path="/buyer-readiness" element={<BuyerReadiness />} />
+          <Route path="/report" element={<Report />} />
           <Route path="/portal/:token" element={<SellerPortal />} />
           <Route path="/portal/:token/present" element={<SellerPresent />} />
           <Route path="/seller-report/:token" element={<SellerReportPDF />} />
