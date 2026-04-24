@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   FilePlus,
@@ -15,7 +14,6 @@ import {
   FileBarChart,
   Menu,
   X,
-  LogOut,
 } from 'lucide-react';
 
 const navSections: { label: string; items: { to: string; label: string; icon: any }[] }[] = [
@@ -49,35 +47,10 @@ const navSections: { label: string; items: { to: string; label: string; icon: an
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [email, setEmail] = useState<string>('');
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.email) setEmail(user.email);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      setEmail(session?.user?.email ?? '');
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  const initials = email
-    ? email
-        .split('@')[0]
-        .split(/[._-]/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((s) => s[0]?.toUpperCase() ?? '')
-        .join('') || email[0].toUpperCase()
-    : '—';
-  const displayName = email ? email.split('@')[0] : 'Signed out';
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate('/auth', { replace: true });
-  };
+  const initials = 'DW';
+  const displayName = 'Danielle Walder';
+  const email = 'Coldwell Banker';
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -145,16 +118,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[12px] font-body font-medium text-sidebar-accent-foreground truncate">{displayName}</p>
-              <p className="text-[10px] font-body text-sidebar-foreground/55 truncate">{email || 'Not signed in'}</p>
+              <p className="text-[10px] font-body text-sidebar-foreground/55 truncate">{email}</p>
             </div>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="text-sidebar-foreground/60 hover:text-sidebar-accent-foreground transition-colors p-1.5 rounded hover:bg-sidebar-accent/40"
-              title="Sign out"
-            >
-              <LogOut className="w-4 h-4" strokeWidth={1.5} />
-            </button>
           </div>
         </div>
       </aside>
