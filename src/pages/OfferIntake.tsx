@@ -228,47 +228,39 @@ export default function OfferIntake() {
       (async () => {
         try {
           const { data: { user } } = await supabase.auth.getUser();
-          if (user && pkg?.dbOfferId) {
-            // Real upload
-            setPackages(prev => prev.map(p =>
-              p.id === currentPkgId
-                ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, progress: 30 } : d) }
-                : p
-            ));
-
-            const { documentId } = await uploadDocument(user.id, pkg.dbOfferId, doc.file, doc.category);
-
-            setPackages(prev => prev.map(p =>
-              p.id === currentPkgId
-                ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'complete', progress: 100, dbDocId: documentId } : d) }
-                : p
-            ));
-            return;
+          if (!user) {
+            throw new Error('You must be signed in to upload documents.');
           }
-        } catch (e) {
-          console.error('Real upload failed, falling back to simulation:', e);
+          if (!pkg?.dbOfferId) {
+            throw new Error('Offer is still being created — please wait a moment and try again.');
+          }
+
+          setPackages(prev => prev.map(p =>
+            p.id === currentPkgId
+              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, progress: 30 } : d) }
+              : p
+          ));
+
+          const { documentId } = await uploadDocument(user.id, pkg.dbOfferId, doc.file, doc.category);
+
+          setPackages(prev => prev.map(p =>
+            p.id === currentPkgId
+              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'complete', progress: 100, dbDocId: documentId } : d) }
+              : p
+          ));
+        } catch (e: any) {
+          console.error('Upload failed:', e);
+          setPackages(prev => prev.map(p =>
+            p.id === currentPkgId
+              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'error', progress: 0 } : d) }
+              : p
+          ));
+          toast({
+            title: 'Upload failed',
+            description: e?.message ?? 'Could not upload the document.',
+            variant: 'destructive',
+          });
         }
-
-        // Fallback: simulate upload progress
-        let prog = 0;
-        const iv = setInterval(() => {
-          prog += 15 + Math.random() * 20;
-          if (prog >= 100) {
-            prog = 100;
-            clearInterval(iv);
-            setPackages(prev => prev.map(p =>
-              p.id === currentPkgId
-                ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'complete', progress: 100 } : d) }
-                : p
-            ));
-          } else {
-            setPackages(prev => prev.map(p =>
-              p.id === currentPkgId
-                ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, progress: Math.round(prog) } : d) }
-                : p
-            ));
-          }
-        }, 300);
       })();
     });
   }, [activePackageId, selectedCategory, packages]);

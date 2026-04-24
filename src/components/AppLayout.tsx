@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 import {
   LayoutDashboard,
   FilePlus,
@@ -48,7 +49,35 @@ const navSections: { label: string; items: { to: string; label: string; icon: an
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [email, setEmail] = useState<string>('');
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user?.email) setEmail(user.email);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setEmail(session?.user?.email ?? '');
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const initials = email
+    ? email
+        .split('@')[0]
+        .split(/[._-]/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((s) => s[0]?.toUpperCase() ?? '')
+        .join('') || email[0].toUpperCase()
+    : '—';
+  const displayName = email ? email.split('@')[0] : 'Signed out';
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate('/auth', { replace: true });
+  };
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -112,19 +141,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="px-3 py-3 border-t border-sidebar-border">
           <div className="flex items-center gap-3 px-3 py-2 rounded-md">
             <div className="w-8 h-8 rounded-full bg-gradient-gold flex items-center justify-center shadow-sm">
-              <span className="text-[11px] font-medium text-accent-foreground tracking-wide">DW</span>
+              <span className="text-[11px] font-medium text-accent-foreground tracking-wide">{initials}</span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-body font-medium text-sidebar-accent-foreground truncate">Danielle Walder</p>
-              <p className="text-[10px] font-body text-sidebar-foreground/55 truncate">Listing Agent · Coldwell Banker</p>
+              <p className="text-[12px] font-body font-medium text-sidebar-accent-foreground truncate">{displayName}</p>
+              <p className="text-[10px] font-body text-sidebar-foreground/55 truncate">{email || 'Not signed in'}</p>
             </div>
-            <Link
-              to="/"
+            <button
+              type="button"
+              onClick={handleSignOut}
               className="text-sidebar-foreground/60 hover:text-sidebar-accent-foreground transition-colors p-1.5 rounded hover:bg-sidebar-accent/40"
               title="Sign out"
             >
               <LogOut className="w-4 h-4" strokeWidth={1.5} />
-            </Link>
+            </button>
           </div>
         </div>
       </aside>
