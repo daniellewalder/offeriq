@@ -106,8 +106,15 @@ export default function Comparison() {
 
   const hasOffers = offers.length > 0;
 
-  /* Early empty-state path — short-circuit before any reduce on empty arrays */
-  if (!loading && !hasOffers) {
+  /* Short-circuit before any reduce on empty arrays — covers loading + empty */
+  if (!hasOffers) {
+    if (loading) {
+      return (
+        <AppLayout>
+          <div className="max-w-5xl mx-auto py-12 text-[12px] text-muted-foreground font-body">Loading offers…</div>
+        </AppLayout>
+      );
+    }
     return (
       <AppLayout>
         <div className="max-w-5xl mx-auto py-12 animate-fade-in">
