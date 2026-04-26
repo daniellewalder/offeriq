@@ -161,6 +161,11 @@ export function generateLeverageForOffer(
       buyer_gives: "7–14 days of post-close occupancy (minimal cost)",
       seller_impact_score: impact,
       buyer_friction_score: 15,
+      counter_move: {
+        label: "Counter addendum",
+        text:
+          "Seller to retain occupancy of the Property for up to fourteen (14) days post-close at no cost to Seller. Buyer to assume utilities from Closing. Standard use-and-occupancy agreement to be executed at Closing.",
+      },
     });
   }
 
@@ -178,6 +183,13 @@ export function generateLeverageForOffer(
       buyer_gives: "Faster inspection turnaround (still standard for the segment)",
       seller_impact_score: impact,
       buyer_friction_score: 30,
+      counter_move: {
+        label: "Counter language",
+        text: `Buyer's inspection period shall be reduced to ${Math.max(
+          5,
+          Math.min(7, inspectionDays - 5),
+        )} calendar days from the Effective Date. All inspection objections must be delivered in writing on or before expiration; otherwise the inspection contingency is deemed waived.`,
+      },
     });
   }
 
@@ -196,6 +208,10 @@ export function generateLeverageForOffer(
       buyer_gives: "Larger refundable deposit held in escrow",
       seller_impact_score: 75,
       buyer_friction_score: 15,
+      counter_move: {
+        label: "Counter language",
+        text: `Earnest Money Deposit to be increased to $${target.toLocaleString()} (~${targetPct}% of purchase price), delivered to Escrow Holder within three (3) business days of mutual acceptance. EMD becomes non-refundable upon expiration of the inspection and financing contingencies.`,
+      },
     });
   }
 
@@ -216,6 +232,11 @@ export function generateLeverageForOffer(
       buyer_gives: "Commitment to bridge appraisal shortfall up to a cap",
       seller_impact_score: 80,
       buyer_friction_score: 45,
+      counter_move: {
+        label: "Counter addendum",
+        text:
+          "Buyer agrees to cover any appraisal shortfall up to $200,000 with additional cash at Closing. Buyer waives the right to renegotiate purchase price below contract price based on appraised value, provided shortfall does not exceed the stated cap.",
+      },
     });
   }
 
@@ -235,6 +256,11 @@ export function generateLeverageForOffer(
       buyer_gives: "Accepts property condition for a defined credit",
       seller_impact_score: 65,
       buyer_friction_score: 30,
+      counter_move: {
+        label: "Counter language",
+        text:
+          "Property is sold strictly AS-IS, WHERE-IS, with no repairs or replacements by Seller. In lieu of repair credits or further negotiation, Seller agrees to a one-time closing credit of $15,000 applied to Buyer's recurring or non-recurring closing costs.",
+      },
     });
   }
 
@@ -252,6 +278,11 @@ export function generateLeverageForOffer(
       buyer_gives: "Accepts a smaller closing-cost credit in lieu of the original ask",
       seller_impact_score: 60,
       buyer_friction_score: 25,
+      counter_move: {
+        label: "Counter language",
+        text:
+          "Seller declines Buyer's requested concessions as written. In their place, Seller offers a closing-cost credit equal to one-half percent (0.5%) of the purchase price, capped per lender guidelines, in full satisfaction of any and all credit requests.",
+      },
     });
   }
 
@@ -268,6 +299,10 @@ export function generateLeverageForOffer(
       buyer_gives: "Nothing — they get their preferred timeline",
       seller_impact_score: 60,
       buyer_friction_score: 5,
+      counter_move: {
+        label: "Counter language",
+        text: `Seller agrees to Buyer's proposed Closing Date of approximately ${offer.closeDays} days from Effective Date, contingent on Buyer's acceptance of all other counter terms — including price, inspection period, and earnest money — without further modification.`,
+      },
     });
   }
 
@@ -287,6 +322,12 @@ export function generateLeverageForOffer(
       buyer_gives: "Standard documentation already in their file",
       seller_impact_score: 70,
       buyer_friction_score: 10,
+      counter_move: {
+        label: "Counter precondition",
+        text: `Seller's acceptance of this counter is expressly conditioned on Buyer delivering, within forty-eight (48) hours: (i) ${missing.join(
+          " and ",
+        )} from Buyer's lender or institution, in form and substance reasonably satisfactory to Seller. Failure to deliver shall render this counter null and void.`,
+      },
     });
   }
 
