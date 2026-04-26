@@ -1,4 +1,4 @@
-import type { Offer, DocumentItem, OfferScores } from "@/data/sampleData";
+import type { Offer, DocumentItem, OfferScores, FieldEvidence } from "@/data/sampleData";
 import { computeScores } from "@/lib/scoringEngine";
 import type { OfferWithExtraction } from "@/lib/offerService";
 
@@ -26,6 +26,17 @@ export function adaptOffer(
     confidence: Number(d.confidence ?? 0),
   }));
 
+  // Build the evidence map from extracted fields
+  const evidence: Record<string, FieldEvidence> = {};
+  for (const [key, val] of Object.entries(f)) {
+    evidence[key] = {
+      value: val.value,
+      confidence: val.confidence,
+      quote: val.evidence,
+      documentName: val.sourceDocumentName,
+    };
+  }
+
   const partial: Offer = {
     id: o.id,
     buyerName: o.buyer_name,
@@ -49,6 +60,7 @@ export function adaptOffer(
     specialNotes: o.special_notes ?? "",
     documents,
     labels: o.labels ?? [],
+    evidence,
     scores: {
       offerStrength: 0,
       closeProbability: 0,
