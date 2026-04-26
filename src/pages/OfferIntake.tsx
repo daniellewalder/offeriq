@@ -192,7 +192,7 @@ export default function OfferIntake() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-          toast({ title: 'Not signed in', description: 'Sign in to save offers to your account. Data will be stored locally for now.', variant: 'destructive' });
+          toast({ title: 'Not signed in', description: 'Please sign in to upload documents.', variant: 'destructive' });
           return;
         }
         const dealId = await getOrCreateDemoAnalysis(user.id);
@@ -202,6 +202,7 @@ export default function OfferIntake() {
         ));
       } catch (e: any) {
         console.error('Failed to create offer in DB:', e);
+        toast({ title: 'Could not create offer', description: e?.message ?? 'Please try again.', variant: 'destructive' });
       }
     })();
   };
@@ -220,19 +221,30 @@ export default function OfferIntake() {
       p.id === activePackageId ? { ...p, documents: [...p.documents, ...newDocs] } : p
     ));
 
-    // Upload files — try real backend first, fall back to simulation
+    // Upload files — wait for offer to exist, then upload
+    const currentPkgId = activePackageId;
     newDocs.forEach(doc => {
-      const currentPkgId = activePackageId;
-      const pkg = packages.find(p => p.id === currentPkgId);
-
       (async () => {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) {
             throw new Error('You must be signed in to upload documents.');
           }
-          if (!pkg?.dbOfferId) {
-            throw new Error('Offer is still being created — please wait a moment and try again.');
+
+          // Wait up to ~10s for the background offer creation to finish
+          let dbOfferId: string | undefined;
+          for (let i = 0; i < 50; i++) {
+            const latest = await new Promise<OfferPackage | undefined>(resolve => {
+              setPackages(prev => {
+                resolve(prev.find(p => p.id === currentPkgId));
+                return prev;
+              });
+            });
+            if (latest?.dbOfferId) { dbOfferId = latest.dbOfferId; break; }
+            await new Promise(r => setTimeout(r, 200));
+          }
+          if (!dbOfferId) {
+            throw new Error('Offer is still being created — please try again in a moment.');
           }
 
           setPackages(prev => prev.map(p =>
@@ -241,7 +253,7 @@ export default function OfferIntake() {
               : p
           ));
 
-          const { documentId } = await uploadDocument(user.id, pkg.dbOfferId, doc.file, doc.category);
+          const { documentId } = await uploadDocument(user.id, dbOfferId, doc.file, doc.category);
 
           setPackages(prev => prev.map(p =>
             p.id === currentPkgId
@@ -263,7 +275,7 @@ export default function OfferIntake() {
         }
       })();
     });
-  }, [activePackageId, selectedCategory, packages]);
+  }, [activePackageId, selectedCategory, toast]);
   const removeDoc = (pkgId: string, docId: string) => {
     setPackages(prev => prev.map(p =>
       p.id === pkgId ? { ...p, documents: p.documents.filter(d => d.id !== docId) } : p
