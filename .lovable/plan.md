@@ -1,95 +1,132 @@
 
 ## Goal
 
-Make file uploads actually work from the flow you're using right now.
+Make the analysis trustworthy enough that a listing agent can sit next to their seller, point at the screen, and say *"this is the offer — here's exactly why"* — and have every number on screen be defensible, sourced, and traceable to the actual offer documents.
 
-## What’s happening now
+Right now two things block that:
+1. `supabase/functions/extract-offer/index.ts` returns **hash-based fake data** — every "extracted" price, deposit, and contingency is invented, not read from the uploaded PDFs.
+2. `src/lib/scoringEngine.ts` runs heuristics on those fake numbers and shows a score with no link back to a document line.
 
-Authentication is working: your account is being created and the app is signed in successfully.
+A seller asking "where did you get $1.2M from?" currently has no answer.
 
-The real problem is the UX and wiring:
+## What we're building
 
-- `/new-analysis` is the page you’re on now
-- that page shows an upload dropzone, but it is only a visual placeholder
-- it has no hidden file input, no `onChange`, no drag/drop handler, and no backend upload call
-- the real upload logic exists in `/offer-intake`
-- even there, uploads only work after creating an offer package first, and that screen defaults to the non-upload view
+### 1. Real document extraction (the foundation)
 
-So from a user perspective, “upload files” appears available in the first screen, but the actual upload pipeline is somewhere else.
+Replace the mock generator with a real Lovable AI extraction pipeline.
 
-## Implementation plan
+- New edge function flow inside `extract-offer`:
+  - For each uploaded document, fetch the file from the `offer-documents` storage bucket
+  - Parse PDFs/images to text (PDF text layer + OCR fallback for scans)
+  - Send the text to Lovable AI (`google/gemini-2.5-pro` for accuracy on long contracts) using **tool calling for structured output** so we get typed fields back, not free-text JSON
+  - For every field, the model must return: `value`, `confidence (0-1)`, and `evidence` (the literal quoted sentence from the document)
+- Fields extracted (matches existing `extracted_offer_fields` schema):
+  - buyer_name, offer_price, financing_type, down_payment / down_payment_percent, earnest_money, contingencies[], inspection_period, appraisal_terms, close_days, leaseback_request, concessions, proof_of_funds, special_notes, missing_items[], notable_risks[], notable_strengths[]
+- Cross-document reconciliation: if purchase agreement says $1.2M but pre-approval says $1.0M, flag it as a `notable_risk` with both quotes
+- Status updates on `documents` table as each one completes (so the UI can show real progress)
 
-1. Replace the fake upload experience on `NewAnalysis`
-- Remove the non-functional upload box from `src/pages/NewAnalysis.tsx`
-- Turn this page into a real “create analysis” entry step, or redirect its CTA straight into the real upload workflow
-- Make the primary action unambiguous: create/open an offer package and continue to uploads
+### 2. Evidence-backed scoring
 
-2. Make the real upload screen the default upload experience
-- Update `src/pages/OfferIntake.tsx` so it opens in upload mode by default instead of the “existing sample offers” view
-- If there are no user-created packages yet, show the create-package UI immediately
-- After package creation, keep that package selected automatically and focus the upload area
+Every score factor in `scoringEngine.ts` already produces an `explanation` string. Extend it to also carry the **document quote and confidence** behind each input.
 
-3. Eliminate the “looks clickable but does nothing” problem
-- Ensure every visible upload zone has a real file input behind it
-- Wire click, drag-over, and drop events consistently
-- Show a clear disabled/empty-state message when uploads are blocked because an offer package does not exist yet
+- `ScoreDetail.factors[]` gains `source: { document_name, quote, confidence }` when the factor was driven by an extracted field
+- The Risk Scoring page becomes click-to-expand: tap "−10 contingency penalty" → see the actual contract clause that triggered it
+- Low-confidence inputs (< 0.7) visually flagged with a "verify this" badge so the agent can sanity-check before showing the seller
 
-4. Fix the upload sequencing edge case
-- Right now `handleFiles()` can run before the background `createOffer()` finishes, which triggers:
-  - “Offer is still being created — please wait a moment and try again.”
-- Change the flow so package creation completes before upload starts, or queue dropped files until `dbOfferId` is ready
-- This removes the race condition between “create package” and “upload document”
+### 3. Seller-priority-weighted recommendation
 
-5. Align dashboard and landing links with the real flow
-- Review links that currently send users to `/new-analysis`
-- Either:
-  - keep `/new-analysis` but make it a real first step, or
-  - route those entry points directly to `/offer-intake`
-- Update empty states and CTAs so the first upload action always lands on a working uploader
+Today `seller_priorities` weights exist but the "top recommendation" doesn't visibly use them.
 
-6. Clean up misleading copy
-- Remove placeholder/demo wording that suggests upload works where it does not
-- Update max file size copy to match the actual platform limit
-- Make labels clearer: “Create offer package” first, then “Upload documents”
+- Build `computeRecommendation(offers, weights)` that produces a single weighted score per offer using the seller's actual priority sliders (price 80, certainty 70, speed 50, etc.)
+- The Comparison page gains a clear **"Recommended: Buyer X"** banner with a one-paragraph plain-English rationale generated by AI, citing the top 3 weighted factors
+- A "what if the seller cared more about speed?" slider lets the agent re-rank live in front of the seller
 
-## Files to update
+### 4. Listing-agent presentation mode
 
-- `src/pages/NewAnalysis.tsx`
-- `src/pages/OfferIntake.tsx`
-- `src/pages/Dashboard.tsx`
-- `src/components/EmptyDealState.tsx`
-- `src/pages/Index.tsx` if its CTA should also point to the working upload flow
+The agent's magic moment is presenting to the seller. Build a focused view for that.
 
-## Expected result
+- New route `/present` (auth-required, agent-only) — full-screen, large-type, one offer per slide
+- Slides: Recommendation → Side-by-side comparison → Each offer's strengths/risks with quoted evidence → Counter-strategy options → Net-proceeds estimate
+- Keyboard arrows / spacebar to advance, dark mode by default, no nav chrome
+- "Print to PDF" produces a leave-behind for the seller
 
-After this change, your flow will be:
+### 5. Net proceeds calculator (missing feature)
+
+Sellers don't care about offer price — they care about **what hits their bank account**. This is the single most-requested missing feature for listing agents.
+
+- Per offer, compute estimated net proceeds: `offer_price − concessions − estimated commission − estimated closing costs − payoff (if entered)`
+- Inputs the agent enters once per deal: commission %, mortgage payoff, transfer-tax rate (state default)
+- Comparison view shows both **Offer Price** and **Estimated Net** columns so the highest offer isn't always the highest net
+
+### 6. Comparable-sales context (defensibility)
+
+To defend "this is a strong price," show context.
+
+- Add an optional `comps` JSON field on `deal_analyses` the agent can paste in (3–6 nearby recent sales: address, price, sqft, close date)
+- Comparison view shows the property's price-per-sqft alongside the comp band; offer prices plot against that band
+- Lovable AI generates a one-line market-context blurb ("$/sqft is in the top 15% of the last 90 days within 0.5 mi")
+
+### 7. Document-quality gate before scoring
+
+If extraction confidence is low or key documents are missing, don't pretend to have a real score.
+
+- New `package_completeness` factor uses real document presence + per-field confidence
+- If an offer is missing proof of funds / pre-approval, the score is shown as "incomplete" with a clear "request these documents" CTA
+- Prevents the agent from confidently citing a number that came from a thin packet
+
+## Database changes
+
+- Add `net_proceeds_inputs` jsonb column to `deal_analyses` (commission_pct, payoff_amount, transfer_tax_pct, other_costs)
+- Add `comps` jsonb column to `deal_analyses` (array of {address, price, sqft, sold_date, distance_mi, notes})
+- Add `recommendation` jsonb column to `deal_analyses` (computed_at, recommended_offer_id, weighted_scores, rationale)
+- No new tables needed — `extracted_offer_fields` already supports per-field confidence + evidence
+
+## Files to create / modify
+
+**Backend**
+- Rewrite `supabase/functions/extract-offer/index.ts` — real extraction with PDF parsing + Lovable AI tool calling
+- New `supabase/functions/recommend-offer/index.ts` — weighted scoring + AI rationale
+- New `supabase/functions/market-context/index.ts` — comp-band blurb generation
+
+**Engines**
+- `src/lib/scoringEngine.ts` — attach `source` evidence to every factor
+- `src/lib/recommendationEngine.ts` — wire seller-priority weighting + net-proceeds
+- New `src/lib/netProceeds.ts` — pure calculator
+- New `src/lib/compsAnalysis.ts` — price-per-sqft band math
+
+**UI**
+- `src/pages/Comparison.tsx` — recommendation banner, net-proceeds column, live priority sliders
+- `src/pages/RiskScoring.tsx` — click-to-expand factor evidence with document quotes
+- `src/pages/SellerPriorities.tsx` — make sliders actually re-rank in real time
+- New `src/pages/Present.tsx` + route — full-screen seller-presentation mode
+- New `src/components/EvidencePopover.tsx` — reusable "where did this number come from" popover
+- New `src/components/NetProceedsEditor.tsx` — commission/payoff/tax inputs
+- New `src/components/CompsEditor.tsx` — paste-in comp sales
+
+## Sequencing
+
+The order matters because each stage unblocks the next:
 
 ```text
-Sign in
-→ Start new analysis
-→ Create/select offer package
-→ Click or drag files
-→ Files upload immediately
-→ Document rows show progress/success
-→ Extraction can run once uploads finish
+Phase 1  Real extraction          (everything else depends on real numbers)
+Phase 2  Evidence in scoring UI    (turns numbers into trust)
+Phase 3  Net proceeds              (the agent's #1 missing feature)
+Phase 4  Weighted recommendation   (the "which one?" answer)
+Phase 5  Comps + market context    (defensibility)
+Phase 6  Presentation mode         (the magic moment)
 ```
 
-## Technical details
-
-- `NewAnalysis.tsx` currently has no actual upload implementation
-- `OfferIntake.tsx` already contains the real upload logic:
-  - file input
-  - drag/drop handlers
-  - `uploadDocument()`
-  - authenticated user check
-  - storage + documents table insert
-- The current failure is primarily flow/wiring, not account creation
-- A secondary issue is the async race between package creation and file upload
-- No backend schema change appears necessary for this specific issue based on the current evidence
+I'd suggest we do **Phase 1 + Phase 2 first as one shippable chunk** — that alone takes the product from "demo with fake data" to "actually trustworthy." Then we decide together what to tackle next based on how it feels.
 
 ## Success criteria
 
-- Clicking the first visible upload area opens a file picker
-- Dragging files onto the first visible upload area adds and uploads them
-- No “wait and try again” race after creating a package
-- Users no longer have to discover a separate hidden upload screen to make uploads work
+- Upload a real purchase agreement PDF → see actual extracted price, contingencies, and dates with quoted evidence
+- Click any score factor → see the literal sentence from the document that drove it
+- Open Comparison → see a clear recommended offer with a plain-English rationale tied to the seller's priorities
+- See **net proceeds**, not just offer price, side-by-side
+- Hit "Present" → enter a clean, large-format mode you'd actually project for a seller meeting
+- Low-confidence extractions are flagged, not hidden — the agent always knows what to double-check
+
+## Open question for you
+
+This plan is big. I recommend **shipping Phase 1 + 2 first** (real extraction + evidence-backed scoring) because without those, everything else is decoration on top of fake data. Want me to scope this first PR to just those two phases, or push through all six?
