@@ -195,7 +195,15 @@ export async function fetchLatestAnalysisForUser(userId: string) {
 export interface OfferWithExtraction {
   offer: any;
   documents: any[];
-  fields: Record<string, { value: any; confidence: number; evidence: string | null }>;
+  fields: Record<
+    string,
+    {
+      value: any;
+      confidence: number;
+      evidence: string | null;
+      sourceDocumentName: string | null;
+    }
+  >;
   missingItems: string[];
   notableRisks: string[];
   notableStrengths: string[];
@@ -232,6 +240,7 @@ export async function fetchOffersWithExtraction(
       value: row.field_value,
       confidence: Number(row.confidence ?? 0),
       evidence: row.evidence,
+      sourceDocumentName: (row as any).source_document_name ?? null,
     };
   }
 
