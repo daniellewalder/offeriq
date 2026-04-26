@@ -242,116 +242,84 @@ export default function OfferIntake() {
     const pkg = packages.find(p => p.id === pkgId);
     if (!pkg) return;
 
+    if (!pkg.dbOfferId) {
+      toast({
+        title: 'Offer not ready',
+        description: 'Wait a moment for the offer record to finish creating, then try again.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const unstored = pkg.documents.filter(d => d.status !== 'stored' && d.status !== 'complete');
+    if (unstored.length > 0) {
+      toast({
+        title: 'Documents still uploading',
+        description: 'Wait for all documents to finish uploading before extracting.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setPackages(prev => prev.map(p =>
-      p.id === pkgId ? { ...p, status: 'extracting' } : p
+      p.id === pkgId ? { ...p, status: 'extracting', extractionError: undefined, documents: p.documents.map(d => ({ ...d, status: 'extracting' as const })) } : p
     ));
 
     try {
-      // Try real backend extraction
-      if (pkg.dbOfferId) {
-        const docPayload = pkg.documents.map(d => ({
-          id: d.dbDocId || d.id,
-          name: d.file.name,
-          category: d.category,
-        }));
+      const docPayload = pkg.documents.map(d => ({
+        id: d.dbDocId || d.id,
+        name: d.file.name,
+        category: d.category,
+      }));
 
-        const result = await triggerExtraction(pkg.dbOfferId, pkg.name, docPayload);
+      const result = await triggerExtraction(pkg.dbOfferId, pkg.name, docPayload);
 
-        // Convert result to ExtractionResult format for display
-        const extraction: ExtractionResult = {};
-        if (result.extraction) {
-          for (const field of result.extraction) {
-            extraction[field.field_name] = {
-              value: field.field_value,
-              confidence: field.confidence,
-              evidence: field.evidence,
-            };
-          }
+      const extraction: ExtractionResult = {};
+      if (result.extraction) {
+        for (const field of result.extraction) {
+          extraction[field.field_name] = {
+            value: field.field_value,
+            confidence: field.confidence,
+            evidence: field.evidence,
+          };
         }
-
-        setPackages(prev => prev.map(p =>
-          p.id === pkgId ? { ...p, status: 'complete', extraction, dbExtractionResult: result } : p
-        ));
-        toast({
-          title: 'Extraction complete',
-          description: `${result.fields_count} fields extracted (v${result.version}). Completeness: ${result.completeness}`,
-        });
-        return;
       }
-    } catch (e: any) {
-      console.error('Real extraction failed, falling back to mock:', e);
-    }
 
-    // Fallback: simulate with mock data
-    setTimeout(() => {
       setPackages(prev => prev.map(p =>
-        p.id === pkgId ? { ...p, status: 'complete', extraction: MOCK_EXTRACTION } : p
+        p.id === pkgId
+          ? {
+              ...p,
+              status: 'complete',
+              extraction,
+              dbExtractionResult: result,
+              documents: p.documents.map(d => ({ ...d, status: 'complete' as const })),
+            }
+          : p
       ));
-      toast({ title: 'Extraction complete', description: 'All fields have been extracted and scored.' });
-    }, 2500);
+      toast({
+        title: 'Extraction complete',
+        description: `${result.fields_count ?? Object.keys(extraction).length} fields extracted (v${result.version ?? 1}). Opening comparison…`,
+      });
+
+      // Navigate so the agent sees their real offer alongside the rest
+      setTimeout(() => navigate('/comparison'), 1200);
+    } catch (e: any) {
+      const msg = e?.message ?? 'Extraction failed. Check that your PDFs contain selectable text.';
+      console.error('Extraction failed:', e);
+      setPackages(prev => prev.map(p =>
+        p.id === pkgId
+          ? {
+              ...p,
+              status: 'idle',
+              extractionError: msg,
+              documents: p.documents.map(d => ({ ...d, status: d.dbDocId ? 'stored' as const : d.status })),
+            }
+          : p
+      ));
+      toast({ title: 'Extraction failed', description: msg, variant: 'destructive' });
+    }
   };
 
   const activePkg = packages.find(p => p.id === activePackageId);
-
-  const runPackageReview = async (offerId: string) => {
-    const offer = sampleProperty.offers.find(o => o.id === offerId);
-    if (!offer) return;
-    setReviewLoading(offerId);
-    try {
-      const offerPayload = {
-        buyer: offer.buyerName,
-        agent: offer.agentName,
-        brokerage: offer.agentBrokerage,
-        price: offer.offerPrice,
-        financing: offer.financingType,
-        down_payment: offer.downPayment,
-        down_payment_pct: offer.downPaymentPercent,
-        earnest_money: offer.earnestMoney,
-        contingencies: offer.contingencies,
-        inspection_period: offer.inspectionPeriod,
-        appraisal_terms: offer.appraisalTerms,
-        close_days: offer.closeDays,
-        close_timeline: offer.closeTimeline,
-        leaseback: offer.leasebackRequest,
-        concessions: offer.concessions,
-        proof_of_funds: offer.proofOfFunds,
-        pre_approval: offer.preApproval,
-        completeness: offer.completeness,
-        special_notes: offer.specialNotes,
-        scores: offer.scores,
-      };
-      const docsPayload = offer.documents.map(d => ({
-        name: d.name,
-        category: d.category,
-        status: d.status,
-        confidence: d.confidence,
-      }));
-
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/review-package`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(SUPABASE_KEY ? { Authorization: `Bearer ${SUPABASE_KEY}` } : {}),
-        },
-        body: JSON.stringify({
-          offer: offerPayload,
-          documents: docsPayload,
-          property: { address: sampleProperty.address, listingPrice: sampleProperty.listingPrice },
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok || data?.error) {
-        toast({ title: 'Review Error', description: data?.error || 'Request failed', variant: 'destructive' });
-      } else if (data?.analysis) {
-        setReviewResults(prev => ({ ...prev, [offerId]: data.analysis }));
-      }
-    } catch (e: any) {
-      toast({ title: 'Review Failed', description: e.message || 'Something went wrong', variant: 'destructive' });
-    } finally {
-      setReviewLoading(null);
-    }
-  };
 
   // Compute summary stats for extraction
   const getExtractionStats = (ext: ExtractionResult) => {
