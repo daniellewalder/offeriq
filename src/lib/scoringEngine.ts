@@ -1,9 +1,22 @@
-import type { Offer } from '@/data/sampleData';
+import type { Offer, FieldEvidence } from '@/data/sampleData';
 
 export interface ScoreDetail {
   score: number;
-  factors: { label: string; impact: number; explanation: string }[];
+  factors: ScoreFactor[];
   summary: string;
+}
+
+export interface ScoreFactor {
+  label: string;
+  impact: number;
+  explanation: string;
+  /** Optional document evidence backing this factor */
+  source?: {
+    documentName: string | null;
+    quote: string | null;
+    confidence: number;
+    fieldKey: string;
+  };
 }
 
 export interface ScoredOffer {
@@ -17,6 +30,18 @@ export interface ScoredOffer {
 
 const clamp = (v: number, min = 0, max = 100) => Math.max(min, Math.min(max, Math.round(v)));
 
+/** Pull the evidence record for a given extracted-field key from the offer. */
+function srcOf(offer: Offer, key: string): ScoreFactor['source'] | undefined {
+  const e: FieldEvidence | undefined = offer.evidence?.[key];
+  if (!e) return undefined;
+  return {
+    documentName: e.documentName,
+    quote: e.quote,
+    confidence: e.confidence,
+    fieldKey: key,
+  };
+}
+
 export function computeScores(offer: Offer, listingPrice: number): ScoredOffer {
   // ─── Offer Strength ───
   const priceRatio = offer.offerPrice / listingPrice;
@@ -25,23 +50,23 @@ export function computeScores(offer: Offer, listingPrice: number): ScoredOffer {
 
   if (priceRatio >= 1.04) {
     strength += 25;
-    strengthFactors.push({ label: 'Price premium', impact: 25, explanation: `${((priceRatio - 1) * 100).toFixed(1)}% over asking — that's a strong signal of serious intent.` });
+    strengthFactors.push({ label: 'Price premium', impact: 25, explanation: `${((priceRatio - 1) * 100).toFixed(1)}% over asking — that's a strong signal of serious intent.`, source: srcOf(offer, 'offer_price') });
   } else if (priceRatio >= 1.0) {
     const bump = Math.round((priceRatio - 1) * 500);
     strength += bump;
-    strengthFactors.push({ label: 'At or above asking', impact: bump, explanation: `Offer is at ${((priceRatio - 1) * 100).toFixed(1)}% over list — solid but not a stretch.` });
+    strengthFactors.push({ label: 'At or above asking', impact: bump, explanation: `Offer is at ${((priceRatio - 1) * 100).toFixed(1)}% over list — solid but not a stretch.`, source: srcOf(offer, 'offer_price') });
   } else {
     const penalty = Math.round((1 - priceRatio) * 300);
     strength -= penalty;
-    strengthFactors.push({ label: 'Below asking', impact: -penalty, explanation: `Coming in ${((1 - priceRatio) * 100).toFixed(1)}% under list reduces competitiveness.` });
+    strengthFactors.push({ label: 'Below asking', impact: -penalty, explanation: `Coming in ${((1 - priceRatio) * 100).toFixed(1)}% under list reduces competitiveness.`, source: srcOf(offer, 'offer_price') });
   }
 
   if (offer.financingType.toLowerCase().includes('cash')) {
     strength += 15;
-    strengthFactors.push({ label: 'All-cash offer', impact: 15, explanation: 'No financing dependency — eliminates lender risk entirely.' });
+    strengthFactors.push({ label: 'All-cash offer', impact: 15, explanation: 'No financing dependency — eliminates lender risk entirely.', source: srcOf(offer, 'financing_type') });
   } else if (offer.downPaymentPercent >= 25) {
     strength += 8;
-    strengthFactors.push({ label: 'Strong down payment', impact: 8, explanation: `${offer.downPaymentPercent}% down shows financial depth and reduces lender exposure.` });
+    strengthFactors.push({ label: 'Strong down payment', impact: 8, explanation: `${offer.downPaymentPercent}% down shows financial depth and reduces lender exposure.`, source: srcOf(offer, 'down_payment_percent') });
   }
 
   if (offer.contingencies.length === 0) {
@@ -57,16 +82,16 @@ export function computeScores(offer: Offer, listingPrice: number): ScoredOffer {
 
   if (offer.concessions && offer.concessions !== 'None') {
     strength -= 8;
-    strengthFactors.push({ label: 'Concession requests', impact: -8, explanation: `Asking for concessions (${offer.concessions}) weakens the net offer.` });
+    strengthFactors.push({ label: 'Concession requests', impact: -8, explanation: `Asking for concessions (${offer.concessions}) weakens the net offer.`, source: srcOf(offer, 'concessions_requested') });
   }
 
   const earnestPct = (offer.earnestMoney / offer.offerPrice) * 100;
   if (earnestPct >= 3) {
     strength += 5;
-    strengthFactors.push({ label: 'Strong deposit', impact: 5, explanation: `${earnestPct.toFixed(1)}% earnest money shows real commitment.` });
+    strengthFactors.push({ label: 'Strong deposit', impact: 5, explanation: `${earnestPct.toFixed(1)}% earnest money shows real commitment.`, source: srcOf(offer, 'earnest_money_deposit') });
   } else if (earnestPct < 2) {
     strength -= 5;
-    strengthFactors.push({ label: 'Weak deposit', impact: -5, explanation: `${earnestPct.toFixed(1)}% deposit is light for this price point.` });
+    strengthFactors.push({ label: 'Weak deposit', impact: -5, explanation: `${earnestPct.toFixed(1)}% deposit is light for this price point.`, source: srcOf(offer, 'earnest_money_deposit') });
   }
 
   // ─── Close Probability ───
@@ -75,21 +100,21 @@ export function computeScores(offer: Offer, listingPrice: number): ScoredOffer {
 
   if (offer.financingType.toLowerCase().includes('cash')) {
     close += 20;
-    closeFactors.push({ label: 'Cash purchase', impact: 20, explanation: 'No loan underwriting, no appraisal dependency — dramatically fewer failure points.' });
+    closeFactors.push({ label: 'Cash purchase', impact: 20, explanation: 'No loan underwriting, no appraisal dependency — dramatically fewer failure points.', source: srcOf(offer, 'financing_type') });
   } else if (offer.preApproval) {
     close += 12;
-    closeFactors.push({ label: 'Pre-approved', impact: 12, explanation: 'Lender has already vetted this buyer — significantly reduces financing risk.' });
+    closeFactors.push({ label: 'Pre-approved', impact: 12, explanation: 'Lender has already vetted this buyer — significantly reduces financing risk.', source: srcOf(offer, 'preapproval_present') });
   } else {
     close -= 10;
-    closeFactors.push({ label: 'No pre-approval', impact: -10, explanation: 'Without lender vetting, financing risk remains an open question.' });
+    closeFactors.push({ label: 'No pre-approval', impact: -10, explanation: 'Without lender vetting, financing risk remains an open question.', source: srcOf(offer, 'preapproval_present') });
   }
 
   if (offer.proofOfFunds) {
     close += 8;
-    closeFactors.push({ label: 'Proof of funds verified', impact: 8, explanation: 'Documented funds confirm the buyer can actually perform.' });
+    closeFactors.push({ label: 'Proof of funds verified', impact: 8, explanation: 'Documented funds confirm the buyer can actually perform.', source: srcOf(offer, 'proof_of_funds_present') });
   } else {
     close -= 12;
-    closeFactors.push({ label: 'No proof of funds', impact: -12, explanation: 'Without verified funds, closing confidence drops materially.' });
+    closeFactors.push({ label: 'No proof of funds', impact: -12, explanation: 'Without verified funds, closing confidence drops materially.', source: srcOf(offer, 'proof_of_funds_present') });
   }
 
   if (offer.contingencies.length >= 3) {
@@ -107,10 +132,10 @@ export function computeScores(offer: Offer, listingPrice: number): ScoredOffer {
 
   if (offer.closeDays <= 21) {
     close += 5;
-    closeFactors.push({ label: 'Fast close', impact: 5, explanation: 'Shorter timeline means less exposure to market shifts or buyer cold feet.' });
+    closeFactors.push({ label: 'Fast close', impact: 5, explanation: 'Shorter timeline means less exposure to market shifts or buyer cold feet.', source: srcOf(offer, 'close_of_escrow_days') });
   } else if (offer.closeDays >= 45) {
     close -= 8;
-    closeFactors.push({ label: 'Extended timeline', impact: -8, explanation: `${offer.closeDays} days is a long exposure window — market conditions or buyer circumstances can change.` });
+    closeFactors.push({ label: 'Extended timeline', impact: -8, explanation: `${offer.closeDays} days is a long exposure window — market conditions or buyer circumstances can change.`, source: srcOf(offer, 'close_of_escrow_days') });
   }
 
   // ─── Financial Confidence ───
@@ -119,32 +144,32 @@ export function computeScores(offer: Offer, listingPrice: number): ScoredOffer {
 
   if (offer.proofOfFunds) {
     financial += 20;
-    finFactors.push({ label: 'Proof of funds present', impact: 20, explanation: 'Verified funds are the foundation of financial credibility.' });
+    finFactors.push({ label: 'Proof of funds present', impact: 20, explanation: 'Verified funds are the foundation of financial credibility.', source: srcOf(offer, 'proof_of_funds_present') });
   } else {
     financial -= 20;
-    finFactors.push({ label: 'Missing proof of funds', impact: -20, explanation: 'No verified funds — this is a serious gap that listing agents notice immediately.' });
+    finFactors.push({ label: 'Missing proof of funds', impact: -20, explanation: 'No verified funds — this is a serious gap that listing agents notice immediately.', source: srcOf(offer, 'proof_of_funds_present') });
   }
 
   if (offer.financingType.toLowerCase().includes('cash')) {
     financial += 25;
-    finFactors.push({ label: 'All-cash buyer', impact: 25, explanation: 'No lending dependency — the strongest possible financial position.' });
+    finFactors.push({ label: 'All-cash buyer', impact: 25, explanation: 'No lending dependency — the strongest possible financial position.', source: srcOf(offer, 'financing_type') });
   } else if (offer.preApproval) {
     financial += 15;
-    finFactors.push({ label: 'Lender pre-approval', impact: 15, explanation: 'A reputable lender has already underwritten this buyer.' });
+    finFactors.push({ label: 'Lender pre-approval', impact: 15, explanation: 'A reputable lender has already underwritten this buyer.', source: srcOf(offer, 'preapproval_present') });
   } else {
     financial -= 15;
-    finFactors.push({ label: 'No pre-approval', impact: -15, explanation: 'Without lender confirmation, the financing is speculative.' });
+    finFactors.push({ label: 'No pre-approval', impact: -15, explanation: 'Without lender confirmation, the financing is speculative.', source: srcOf(offer, 'preapproval_present') });
   }
 
   if (offer.downPaymentPercent >= 30) {
     financial += 10;
-    finFactors.push({ label: 'High down payment', impact: 10, explanation: `${offer.downPaymentPercent}% down signals the buyer isn't stretching to afford this property.` });
+    finFactors.push({ label: 'High down payment', impact: 10, explanation: `${offer.downPaymentPercent}% down signals the buyer isn't stretching to afford this property.`, source: srcOf(offer, 'down_payment_percent') });
   } else if (offer.downPaymentPercent >= 20) {
     financial += 5;
-    finFactors.push({ label: 'Standard down payment', impact: 5, explanation: `${offer.downPaymentPercent}% down is adequate but not exceptional.` });
+    finFactors.push({ label: 'Standard down payment', impact: 5, explanation: `${offer.downPaymentPercent}% down is adequate but not exceptional.`, source: srcOf(offer, 'down_payment_percent') });
   } else if (offer.downPaymentPercent < 20 && !offer.financingType.toLowerCase().includes('cash')) {
     financial -= 10;
-    finFactors.push({ label: 'Low down payment', impact: -10, explanation: `${offer.downPaymentPercent}% down may signal the buyer is at their financial ceiling.` });
+    finFactors.push({ label: 'Low down payment', impact: -10, explanation: `${offer.downPaymentPercent}% down may signal the buyer is at their financial ceiling.`, source: srcOf(offer, 'down_payment_percent') });
   }
 
   // Check for document verification quality
