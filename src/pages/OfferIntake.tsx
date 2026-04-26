@@ -152,12 +152,8 @@ const FIELD_GROUPS: { title: string; icon: typeof Shield; fields: string[] }[] =
 
 export default function OfferIntake() {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Sample offers from existing data shown as "already extracted"
-  const [expandedOffer, setExpandedOffer] = useState(sampleProperty.offers[0].id);
-  const [reviewResults, setReviewResults] = useState<Record<string, any>>({});
-  const [reviewLoading, setReviewLoading] = useState<string | null>(null);
 
   // New upload state
   const [packages, setPackages] = useState<OfferPackage[]>([]);
@@ -166,9 +162,6 @@ export default function OfferIntake() {
   const [newOfferName, setNewOfferName] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<DocCategory>('Purchase Agreement');
   const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
-
-  // View toggle — default to upload so users can actually upload immediately
-  const [view, setView] = useState<'existing' | 'upload'>('upload');
 
   const createPackage = () => {
     if (!newOfferName.trim()) {
