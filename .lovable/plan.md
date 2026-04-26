@@ -1,45 +1,95 @@
 
-## Why uploads don't work
+## Goal
 
-The upload pipeline is fully wired — the Supabase storage bucket `offer-documents` exists with correct RLS, and `uploadDocument()` in `src/lib/offerService.ts` does the right thing. The problem is upstream:
+Make file uploads actually work from the flow you're using right now.
 
-**The app has no authentication.** There is no `/auth` route, no sign-in screen, no sign-up. `App.tsx` drops you straight onto the dashboard. When `OfferIntake` calls `supabase.auth.getUser()`, it returns `null`, the code shows a "Not signed in" toast, and the upload silently falls back to a fake progress simulation that never touches storage or the database.
+## What’s happening now
 
-Storage RLS requires `auth.uid()` to match the first folder of the upload path. With no logged-in user, every real upload is rejected.
+Authentication is working: your account is being created and the app is signed in successfully.
 
-## What I'll build
+The real problem is the UX and wiring:
 
-### 1. Auth page (`/auth`)
-- New `src/pages/Auth.tsx` with tabs for Sign in / Sign up (email + password).
-- Uses `supabase.auth.signUp` and `supabase.auth.signInWithPassword`.
-- Sets `emailRedirectTo: ${window.location.origin}/dashboard` on signup.
-- On success, navigates to `/dashboard`. Premium styling matching the existing OfferIQ design tokens.
+- `/new-analysis` is the page you’re on now
+- that page shows an upload dropzone, but it is only a visual placeholder
+- it has no hidden file input, no `onChange`, no drag/drop handler, and no backend upload call
+- the real upload logic exists in `/offer-intake`
+- even there, uploads only work after creating an offer package first, and that screen defaults to the non-upload view
 
-### 2. Auto-confirm email signups
-- Configure auth so users can sign in immediately without verifying email — the prototype stays usable with no inbox round-trip.
+So from a user perspective, “upload files” appears available in the first screen, but the actual upload pipeline is somewhere else.
 
-### 3. Route protection
-- New `src/components/ProtectedRoute.tsx` that subscribes to `onAuthStateChange` first, then calls `getSession()` (correct order), and redirects to `/auth` if no session.
-- Wrap every workspace route in `App.tsx`: `/dashboard`, `/new-analysis`, `/offer-intake`, `/comparison`, `/risk-scoring`, `/priorities`, `/leverage`, `/counter-strategy`, `/delta-view`, `/buyer-readiness`, `/report`.
-- Leave public routes alone: `/`, `/auth`, `/portal/:token`, `/portal/:token/present`, `/seller-report/:token`.
+## Implementation plan
 
-### 4. Wire the sidebar to the real user
-- `AppLayout.tsx` currently hardcodes "DW / Danielle Walder / Coldwell Banker". Replace with the logged-in user's email + initials from `supabase.auth.getUser()`.
-- Sign-out button calls `supabase.auth.signOut()` then navigates to `/auth`.
+1. Replace the fake upload experience on `NewAnalysis`
+- Remove the non-functional upload box from `src/pages/NewAnalysis.tsx`
+- Turn this page into a real “create analysis” entry step, or redirect its CTA straight into the real upload workflow
+- Make the primary action unambiguous: create/open an offer package and continue to uploads
 
-### 5. Fix `OfferIntake` upload UX
-- Remove the silent "fall back to fake simulation" path. If upload fails, surface the real error in a toast instead of pretending it worked. Keep the real upload path (which already works once a user is signed in).
+2. Make the real upload screen the default upload experience
+- Update `src/pages/OfferIntake.tsx` so it opens in upload mode by default instead of the “existing sample offers” view
+- If there are no user-created packages yet, show the create-package UI immediately
+- After package creation, keep that package selected automatically and focus the upload area
 
-## Files
+3. Eliminate the “looks clickable but does nothing” problem
+- Ensure every visible upload zone has a real file input behind it
+- Wire click, drag-over, and drop events consistently
+- Show a clear disabled/empty-state message when uploads are blocked because an offer package does not exist yet
 
-- **Create:** `src/pages/Auth.tsx`, `src/components/ProtectedRoute.tsx`
-- **Edit:** `src/App.tsx`, `src/components/AppLayout.tsx`, `src/pages/OfferIntake.tsx`
-- **Backend:** enable auto-confirm email signups
+4. Fix the upload sequencing edge case
+- Right now `handleFiles()` can run before the background `createOffer()` finishes, which triggers:
+  - “Offer is still being created — please wait a moment and try again.”
+- Change the flow so package creation completes before upload starts, or queue dropped files until `dbOfferId` is ready
+- This removes the race condition between “create package” and “upload document”
 
-## Note on user profiles
+5. Align dashboard and landing links with the real flow
+- Review links that currently send users to `/new-analysis`
+- Either:
+  - keep `/new-analysis` but make it a real first step, or
+  - route those entry points directly to `/offer-intake`
+- Update empty states and CTAs so the first upload action always lands on a working uploader
 
-This plan does NOT create a `profiles` table — the sidebar will show email + initials derived from `auth.users` directly. If you later want display names, avatars, brokerage, or roles, we can add a `profiles` table with an auto-create trigger as a follow-up.
+6. Clean up misleading copy
+- Remove placeholder/demo wording that suggests upload works where it does not
+- Update max file size copy to match the actual platform limit
+- Make labels clearer: “Create offer package” first, then “Upload documents”
 
-## Result
+## Files to update
 
-Open the app → redirected to `/auth` → sign up with email/password → land on dashboard → go to Offer Intake → uploaded documents actually persist to Supabase storage and the `documents` table, tied to your user.
+- `src/pages/NewAnalysis.tsx`
+- `src/pages/OfferIntake.tsx`
+- `src/pages/Dashboard.tsx`
+- `src/components/EmptyDealState.tsx`
+- `src/pages/Index.tsx` if its CTA should also point to the working upload flow
+
+## Expected result
+
+After this change, your flow will be:
+
+```text
+Sign in
+→ Start new analysis
+→ Create/select offer package
+→ Click or drag files
+→ Files upload immediately
+→ Document rows show progress/success
+→ Extraction can run once uploads finish
+```
+
+## Technical details
+
+- `NewAnalysis.tsx` currently has no actual upload implementation
+- `OfferIntake.tsx` already contains the real upload logic:
+  - file input
+  - drag/drop handlers
+  - `uploadDocument()`
+  - authenticated user check
+  - storage + documents table insert
+- The current failure is primarily flow/wiring, not account creation
+- A secondary issue is the async race between package creation and file upload
+- No backend schema change appears necessary for this specific issue based on the current evidence
+
+## Success criteria
+
+- Clicking the first visible upload area opens a file picker
+- Dragging files onto the first visible upload area adds and uploads them
+- No “wait and try again” race after creating a package
+- Users no longer have to discover a separate hidden upload screen to make uploads work
