@@ -60,43 +60,6 @@ interface OfferPackage {
   extractionError?: string;
 }
 
-// --------------- mock extraction ---------------
-
-const MOCK_EXTRACTION: ExtractionResult = {
-  buyer_name: { value: 'Jonathan & Claire Whitfield', confidence: 0.98, evidence: 'Buyer: Jonathan M. Whitfield and Claire A. Whitfield, as joint tenants' },
-  property_address: { value: '1247 Stone Canyon Rd, Bel Air, CA 90077', confidence: 0.99, evidence: 'Property Address: 1247 Stone Canyon Road, Bel Air, California 90077' },
-  offer_price: { value: 8950000, confidence: 0.99, evidence: 'Purchase Price: Eight Million Nine Hundred Fifty Thousand Dollars ($8,950,000)' },
-  financing_type: { value: 'Conventional — 25% Down', confidence: 0.95, evidence: 'Type of financing: Conventional mortgage, 75% LTV' },
-  loan_amount: { value: 6712500, confidence: 0.93, evidence: 'Loan amount shall not exceed $6,712,500' },
-  down_payment_amount: { value: 2237500, confidence: 0.94, evidence: 'Down payment of $2,237,500 (25% of purchase price)' },
-  down_payment_percent: { value: 25, confidence: 0.96, evidence: 'Down payment of $2,237,500 (25% of purchase price)' },
-  earnest_money_deposit: { value: 200000, confidence: 0.97, evidence: 'Initial deposit of $200,000 within 3 business days of acceptance' },
-  close_of_escrow_days: { value: 30, confidence: 0.96, evidence: 'Close of escrow shall be 30 days after acceptance' },
-  requested_close_date: { value: null, confidence: 0.0, evidence: null },
-  inspection_contingency_present: { value: true, confidence: 0.98, evidence: 'Buyer shall have the right to conduct inspections within 10 days' },
-  inspection_contingency_days: { value: 10, confidence: 0.97, evidence: 'inspection period of ten (10) calendar days' },
-  appraisal_contingency_present: { value: true, confidence: 0.92, evidence: 'This offer is contingent upon the property appraising at or above the purchase price' },
-  appraisal_contingency_days: { value: 17, confidence: 0.88, evidence: 'Appraisal contingency shall be removed within 17 days' },
-  loan_contingency_present: { value: true, confidence: 0.91, evidence: 'Loan contingency period: 21 days from acceptance' },
-  loan_contingency_days: { value: 21, confidence: 0.90, evidence: 'Loan contingency period: 21 days from acceptance' },
-  leaseback_requested: { value: true, confidence: 0.85, evidence: 'Seller may occupy the property for up to 14 days after close at no cost' },
-  leaseback_days: { value: 14, confidence: 0.84, evidence: 'up to 14 days after close' },
-  seller_credit_requested: { value: null, confidence: 0.0, evidence: null },
-  repairs_requested: { value: null, confidence: 0.0, evidence: null },
-  proof_of_funds_present: { value: true, confidence: 0.96, evidence: 'Attached: Bank statement from Chase Private Client dated April 2026' },
-  proof_of_income_present: { value: true, confidence: 0.91, evidence: 'Attached: 2025 W-2 and two most recent pay stubs' },
-  preapproval_present: { value: true, confidence: 0.95, evidence: 'Pre-approval letter from First Republic Bank dated April 18, 2026' },
-  lender_name: { value: 'First Republic Bank', confidence: 0.94, evidence: 'Pre-approval letter from First Republic Bank' },
-  addenda_present: { value: true, confidence: 0.87, evidence: 'Addendum A: Leaseback Agreement' },
-  disclosure_acknowledgment_present: { value: true, confidence: 0.82, evidence: 'Buyer acknowledges receipt of Transfer Disclosure Statement' },
-  occupancy_terms: { value: 'Buyer intends to occupy as primary residence', confidence: 0.78, evidence: 'Buyer represents that the property will be their primary residence' },
-  special_requests: { value: null, confidence: 0.0, evidence: null },
-  package_completeness: { value: '92%', confidence: 0.90, evidence: null },
-  missing_items: { value: ['Specific close date not stated', 'No seller credit or repair language'], confidence: 0.85, evidence: null },
-  notable_risks: { value: ['Three active contingencies increase fall-through risk', 'Appraisal contingency on a financed offer at this price point'], confidence: 0.88, evidence: null },
-  notable_strengths: { value: ['Strong proof of funds from Chase Private Client', 'Rent-free leaseback offered without prompting', 'Complete documentation package'], confidence: 0.92, evidence: null },
-};
-
 // --------------- helpers ---------------
 
 const confidenceColor = (c: number) => {
