@@ -154,6 +154,8 @@ export type Database = {
           category: string
           confidence: number | null
           created_at: string
+          extracted_text: string | null
+          extraction_error: string | null
           file_path: string | null
           file_size: number | null
           id: string
@@ -167,6 +169,8 @@ export type Database = {
           category: string
           confidence?: number | null
           created_at?: string
+          extracted_text?: string | null
+          extraction_error?: string | null
           file_path?: string | null
           file_size?: number | null
           id?: string
@@ -180,6 +184,8 @@ export type Database = {
           category?: string
           confidence?: number | null
           created_at?: string
+          extracted_text?: string | null
+          extraction_error?: string | null
           file_path?: string | null
           file_size?: number | null
           id?: string
@@ -208,6 +214,8 @@ export type Database = {
           field_value: Json | null
           id: string
           offer_id: string
+          source_document_id: string | null
+          source_document_name: string | null
           version: number | null
         }
         Insert: {
@@ -218,6 +226,8 @@ export type Database = {
           field_value?: Json | null
           id?: string
           offer_id: string
+          source_document_id?: string | null
+          source_document_name?: string | null
           version?: number | null
         }
         Update: {
@@ -228,6 +238,8 @@ export type Database = {
           field_value?: Json | null
           id?: string
           offer_id?: string
+          source_document_id?: string | null
+          source_document_name?: string | null
           version?: number | null
         }
         Relationships: [
