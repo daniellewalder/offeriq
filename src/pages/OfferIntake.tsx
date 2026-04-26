@@ -167,8 +167,8 @@ export default function OfferIntake() {
   const [selectedCategory, setSelectedCategory] = useState<DocCategory>('Purchase Agreement');
   const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
 
-  // View toggle
-  const [view, setView] = useState<'existing' | 'upload'>('existing');
+  // View toggle — default to upload so users can actually upload immediately
+  const [view, setView] = useState<'existing' | 'upload'>('upload');
 
   const createPackage = () => {
     if (!newOfferName.trim()) {
