@@ -16,6 +16,9 @@ import {
   Wrench,
   BadgeCheck,
   FileCheck,
+  Quote,
+  Copy,
+  ArrowRightCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { formatCurrency } from "@/data/sampleData";
@@ -507,9 +510,74 @@ function SuggestionCard({
               <p className="text-[12px] font-body text-foreground">{s.buyer_gives}</p>
             </div>
           </div>
+
+          {s.evidence?.quote && (
+            <div className="rounded-sm border border-info/20 bg-info/[0.04] p-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[10px] tracking-[0.1em] uppercase text-info font-body font-medium flex items-center gap-1.5">
+                  <Quote className="w-3 h-3" strokeWidth={1.5} />
+                  Evidence from contract
+                </p>
+                <span className="text-[10px] text-muted-foreground font-body">
+                  {Math.round((s.evidence.confidence ?? 0) * 100)}% confidence
+                </span>
+              </div>
+              <p className="text-[12px] font-body text-foreground italic leading-relaxed">
+                "{s.evidence.quote}"
+              </p>
+              {s.evidence.documentName && (
+                <p className="text-[10px] text-muted-foreground font-body mt-1.5">
+                  — {s.evidence.documentName}
+                </p>
+              )}
+            </div>
+          )}
+
+          {s.counter_move && (
+            <div className="rounded-sm border border-accent/30 bg-accent/[0.04] p-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[10px] tracking-[0.1em] uppercase text-accent font-body font-medium flex items-center gap-1.5">
+                  <ArrowRightCircle className="w-3 h-3" strokeWidth={1.5} />
+                  Suggested counter move · {s.counter_move.label}
+                </p>
+                <CopyButton text={s.counter_move.text} />
+              </div>
+              <p className="text-[12px] font-body text-foreground leading-relaxed whitespace-pre-wrap">
+                {s.counter_move.text}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={async (e) => {
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          toast({ title: "Counter language copied" });
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          toast({ title: "Copy failed", variant: "destructive" });
+        }
+      }}
+      className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors font-body"
+    >
+      {copied ? (
+        <CheckCircle2 className="w-3 h-3 text-success" />
+      ) : (
+        <Copy className="w-3 h-3" />
+      )}
+      {copied ? "Copied" : "Copy"}
+    </button>
   );
 }
 
