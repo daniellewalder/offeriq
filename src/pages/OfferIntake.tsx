@@ -343,9 +343,15 @@ export default function OfferIntake() {
               Upload offer packages. AI extracts and scores every deal term automatically.
             </p>
           </div>
+          <Link
+            to="/comparison"
+            className="inline-flex items-center gap-1.5 text-[12px] font-body font-medium px-3 py-2 rounded-sm border border-border/60 text-muted-foreground hover:text-foreground hover:border-accent/40 transition-colors"
+          >
+            View comparison <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.5} />
+          </Link>
+        </div>
 
-
-        {/* ========= UPLOAD NEW VIEW ========= */}
+        {/* ========= UPLOAD ========= */}
           <div className="space-y-6">
             {/* Offer package list */}
             <div className="flex gap-3 flex-wrap items-center">
