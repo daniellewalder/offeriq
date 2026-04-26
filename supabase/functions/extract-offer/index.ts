@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { extractText, getDocumentProxy } from "https://esm.sh/unpdf@0.12.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,328 +7,336 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-interface ExtractionField {
+const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const MODEL = "google/gemini-2.5-pro"; // accuracy on long contracts
+
+interface DocInput {
+  id: string;
+  name: string;
+  category: string;
+}
+
+interface DocWithText extends DocInput {
+  text: string;
+  error?: string;
+}
+
+interface ExtractedField {
   field_name: string;
   field_value: any;
   confidence: number;
   evidence: string | null;
+  source_document_id: string | null;
+  source_document_name: string | null;
 }
 
-// Simulated extraction based on document categories present
-function generateMockExtraction(
-  documents: { name: string; category: string }[],
+// ─── PDF / text parsing ─────────────────────────────────────────────────────
+
+async function downloadAndParse(
+  supabase: any,
+  doc: { id: string; name: string; file_path: string | null; mime_type: string | null; extracted_text: string | null },
+): Promise<{ text: string; error?: string }> {
+  // Use cached text if available
+  if (doc.extracted_text && doc.extracted_text.length > 0) {
+    return { text: doc.extracted_text };
+  }
+  if (!doc.file_path) {
+    return { text: "", error: "No file_path on document" };
+  }
+
+  try {
+    const { data, error } = await supabase.storage
+      .from("offer-documents")
+      .download(doc.file_path);
+    if (error || !data) {
+      return { text: "", error: `Storage download failed: ${error?.message ?? "unknown"}` };
+    }
+
+    const mime = (doc.mime_type ?? "").toLowerCase();
+    const isPdf = mime.includes("pdf") || doc.name.toLowerCase().endsWith(".pdf");
+
+    if (isPdf) {
+      const buf = new Uint8Array(await data.arrayBuffer());
+      const pdf = await getDocumentProxy(buf);
+      const { text } = await extractText(pdf, { mergePages: true });
+      const cleaned = (Array.isArray(text) ? text.join("\n") : text).trim();
+      return { text: cleaned };
+    }
+
+    // Text-like fallbacks
+    if (
+      mime.startsWith("text/") ||
+      mime.includes("json") ||
+      mime.includes("csv") ||
+      doc.name.match(/\.(txt|md|csv|json)$/i)
+    ) {
+      const text = await data.text();
+      return { text: text.trim() };
+    }
+
+    // Images / docx / unknown — skip parsing, model will rely on category + name
+    return {
+      text: "",
+      error: `Unsupported mime "${mime}" — parsed as metadata-only.`,
+    };
+  } catch (e: any) {
+    return { text: "", error: `Parse error: ${e?.message ?? String(e)}` };
+  }
+}
+
+function truncate(s: string, max = 25000): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max) + `\n\n[...truncated ${s.length - max} chars...]`;
+}
+
+// ─── Lovable AI extraction ───────────────────────────────────────────────────
+
+const EXTRACTION_TOOL = {
+  type: "function",
+  function: {
+    name: "record_offer_extraction",
+    description:
+      "Record every offer term you can find in the documents, with exact quotes as evidence and a calibrated confidence score.",
+    parameters: {
+      type: "object",
+      properties: {
+        fields: {
+          type: "array",
+          description: "One entry per extracted field. Use null for value when not found.",
+          items: {
+            type: "object",
+            properties: {
+              field_name: {
+                type: "string",
+                enum: [
+                  "buyer_name",
+                  "offer_price",
+                  "financing_type",
+                  "loan_amount",
+                  "down_payment_amount",
+                  "down_payment_percent",
+                  "earnest_money_deposit",
+                  "close_of_escrow_days",
+                  "inspection_contingency_present",
+                  "inspection_contingency_days",
+                  "appraisal_contingency_present",
+                  "appraisal_contingency_days",
+                  "loan_contingency_present",
+                  "loan_contingency_days",
+                  "leaseback_requested",
+                  "leaseback_days",
+                  "concessions_requested",
+                  "proof_of_funds_present",
+                  "preapproval_present",
+                  "agent_name",
+                  "agent_brokerage",
+                  "special_notes",
+                ],
+              },
+              field_value: {
+                description:
+                  "The extracted value: number for amounts/days/percent, boolean for *_present, string otherwise. Use null if not found.",
+              },
+              confidence: {
+                type: "number",
+                minimum: 0,
+                maximum: 1,
+                description: "0 = not found, 1 = explicitly and unambiguously stated",
+              },
+              evidence: {
+                type: ["string", "null"],
+                description:
+                  "The literal quoted sentence or phrase from the document supporting this value. Null if not found.",
+              },
+              source_document_name: {
+                type: ["string", "null"],
+                description: "Name of the document this field was extracted from.",
+              },
+            },
+            required: ["field_name", "field_value", "confidence", "evidence", "source_document_name"],
+          },
+        },
+        missing_items: {
+          type: "array",
+          items: { type: "string" },
+          description: "List any standard offer-package items that are missing or unclear.",
+        },
+        notable_risks: {
+          type: "array",
+          items: { type: "string" },
+          description: "Plain-English risks a listing agent should flag for the seller.",
+        },
+        notable_strengths: {
+          type: "array",
+          items: { type: "string" },
+          description: "Plain-English strengths worth highlighting.",
+        },
+      },
+      required: ["fields", "missing_items", "notable_risks", "notable_strengths"],
+    },
+  },
+} as const;
+
+const SYSTEM_PROMPT = `You are an expert real-estate transaction analyst helping a listing agent evaluate a buyer's offer package.
+
+You will be given the full text of one or more documents from a single offer package (purchase agreement, pre-approval letter, proof of funds, addenda, disclosures, etc.).
+
+Your job:
+1. Extract every standard offer term you can find.
+2. For each field, return the literal quoted sentence from the document as 'evidence'. If a field is not found, set value to null, confidence to 0, and evidence to null.
+3. Calibrate confidence honestly: 0.95+ only when the value is explicitly stated. 0.5-0.8 when inferred. 0 when missing.
+4. Cite which document each field came from (use the document name shown in the input).
+5. Cross-reference: if the purchase agreement says one price and the pre-approval says another, list it under notable_risks with both quotes.
+6. Identify missing items (e.g. "no proof of funds", "earnest money amount not stated").
+7. Identify risks and strengths a listing agent would flag for their seller.
+
+Return ONLY by calling the record_offer_extraction tool. Do not write any prose response.`;
+
+async function callLovableAI(
+  apiKey: string,
+  documents: DocWithText[],
   offerName: string,
-): ExtractionField[] {
-  const categories = documents.map((d) => d.category);
-  const hasPurchaseAgreement = categories.includes("Purchase Agreement");
-  const hasProofOfFunds = categories.includes("Proof of Funds");
-  const hasPreApproval = categories.includes("Pre-Approval");
-  const hasProofOfIncome = categories.includes("Proof of Income");
-  const hasAddenda = categories.includes("Addenda");
-  const hasDisclosures = categories.includes("Disclosures");
+): Promise<{ extraction: any; error?: string }> {
+  const docPayload = documents
+    .map((d) => {
+      const header = `=== DOCUMENT: ${d.name} (category: ${d.category}) ===`;
+      const body = d.text ? truncate(d.text) : `[Document could not be parsed: ${d.error ?? "unknown"}. Treat as missing.]`;
+      return `${header}\n${body}`;
+    })
+    .join("\n\n");
 
-  // Generate a realistic price based on name hash
-  const hash = offerName.split("").reduce((s, c) => s + c.charCodeAt(0), 0);
-  const basePrice = 800000 + (hash % 40) * 50000;
-  const downPct = [15, 20, 25, 30, 100][hash % 5];
-  const isCash = downPct === 100;
-  const closeDays = [14, 21, 28, 30, 45][hash % 5];
-  const inspDays = [5, 7, 10, 14, 17][hash % 5];
-  const earnestPct = 1.5 + (hash % 3) * 0.5;
-  const earnestMoney = Math.round(basePrice * (earnestPct / 100));
+  const userMessage = `Buyer / offer label: ${offerName}\n\nDocuments:\n\n${docPayload}\n\nExtract every offer term. Use the tool.`;
 
-  const fields: ExtractionField[] = [];
-
-  // Core terms — always attempted
-  fields.push({
-    field_name: "buyer_name",
-    field_value: offerName,
-    confidence: hasPurchaseAgreement ? 0.97 : 0.4,
-    evidence: hasPurchaseAgreement
-      ? `Buyer: ${offerName}, as identified in the purchase agreement`
-      : null,
+  const resp = await fetch(LOVABLE_AI_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userMessage },
+      ],
+      tools: [EXTRACTION_TOOL],
+      tool_choice: { type: "function", function: { name: "record_offer_extraction" } },
+    }),
   });
 
-  fields.push({
-    field_name: "offer_price",
-    field_value: basePrice,
-    confidence: hasPurchaseAgreement ? 0.99 : 0.0,
-    evidence: hasPurchaseAgreement
-      ? `Purchase Price: $${basePrice.toLocaleString()}`
-      : null,
-  });
-
-  fields.push({
-    field_name: "financing_type",
-    field_value: isCash
-      ? "All Cash"
-      : `Conventional — ${downPct}% Down`,
-    confidence: hasPurchaseAgreement ? 0.95 : 0.0,
-    evidence: hasPurchaseAgreement
-      ? isCash
-        ? "All-cash purchase, no financing contingency"
-        : `Conventional mortgage, ${100 - downPct}% LTV`
-      : null,
-  });
-
-  if (!isCash) {
-    const loanAmt = Math.round(basePrice * ((100 - downPct) / 100));
-    fields.push({
-      field_name: "loan_amount",
-      field_value: loanAmt,
-      confidence: hasPurchaseAgreement ? 0.93 : 0.0,
-      evidence: hasPurchaseAgreement
-        ? `Loan amount shall not exceed $${loanAmt.toLocaleString()}`
-        : null,
-    });
+  if (!resp.ok) {
+    const txt = await resp.text();
+    if (resp.status === 429) {
+      return { extraction: null, error: "AI rate limit exceeded — please try again in a minute." };
+    }
+    if (resp.status === 402) {
+      return { extraction: null, error: "AI credits exhausted — add credits in Lovable Cloud workspace settings." };
+    }
+    return { extraction: null, error: `AI gateway error ${resp.status}: ${txt.slice(0, 300)}` };
   }
 
-  const downAmt = Math.round(basePrice * (downPct / 100));
-  fields.push({
-    field_name: "down_payment_amount",
-    field_value: downAmt,
-    confidence: hasPurchaseAgreement ? 0.94 : 0.0,
-    evidence: hasPurchaseAgreement
-      ? `Down payment of $${downAmt.toLocaleString()} (${downPct}% of purchase price)`
-      : null,
-  });
-
-  fields.push({
-    field_name: "down_payment_percent",
-    field_value: downPct,
-    confidence: hasPurchaseAgreement ? 0.96 : 0.0,
-    evidence: hasPurchaseAgreement
-      ? `Down payment: ${downPct}%`
-      : null,
-  });
-
-  fields.push({
-    field_name: "earnest_money_deposit",
-    field_value: earnestMoney,
-    confidence: hasPurchaseAgreement ? 0.97 : 0.0,
-    evidence: hasPurchaseAgreement
-      ? `Initial deposit of $${earnestMoney.toLocaleString()} within 3 business days`
-      : null,
-  });
-
-  // Timeline
-  fields.push({
-    field_name: "close_of_escrow_days",
-    field_value: closeDays,
-    confidence: hasPurchaseAgreement ? 0.96 : 0.0,
-    evidence: hasPurchaseAgreement
-      ? `Close of escrow shall be ${closeDays} days after acceptance`
-      : null,
-  });
-
-  // Contingencies
-  const hasInspection = inspDays <= 14;
-  fields.push({
-    field_name: "inspection_contingency_present",
-    field_value: true,
-    confidence: hasPurchaseAgreement ? 0.98 : 0.0,
-    evidence: hasPurchaseAgreement
-      ? `Buyer shall have the right to conduct inspections within ${inspDays} days`
-      : null,
-  });
-
-  fields.push({
-    field_name: "inspection_contingency_days",
-    field_value: inspDays,
-    confidence: hasPurchaseAgreement ? 0.97 : 0.0,
-    evidence: hasPurchaseAgreement
-      ? `Inspection period of ${inspDays} calendar days`
-      : null,
-  });
-
-  if (!isCash) {
-    fields.push({
-      field_name: "appraisal_contingency_present",
-      field_value: true,
-      confidence: hasPurchaseAgreement ? 0.92 : 0.0,
-      evidence: hasPurchaseAgreement
-        ? "Offer is contingent upon the property appraising at or above the purchase price"
-        : null,
-    });
-
-    fields.push({
-      field_name: "loan_contingency_present",
-      field_value: true,
-      confidence: hasPurchaseAgreement ? 0.91 : 0.0,
-      evidence: hasPurchaseAgreement
-        ? `Loan contingency period: ${closeDays - 9} days from acceptance`
-        : null,
-    });
+  const data = await resp.json();
+  const toolCall = data?.choices?.[0]?.message?.tool_calls?.[0];
+  if (!toolCall) {
+    return { extraction: null, error: "Model did not return a tool call" };
   }
-
-  // Leaseback — random based on hash
-  const wantsLeaseback = hash % 3 === 0;
-  const leasebackDays = wantsLeaseback ? [7, 14, 30][hash % 3] : 0;
-  fields.push({
-    field_name: "leaseback_requested",
-    field_value: wantsLeaseback,
-    confidence: hasPurchaseAgreement ? 0.85 : 0.0,
-    evidence: wantsLeaseback && hasPurchaseAgreement
-      ? `Seller may occupy the property for up to ${leasebackDays} days after close`
-      : null,
-  });
-
-  if (wantsLeaseback) {
-    fields.push({
-      field_name: "leaseback_days",
-      field_value: leasebackDays,
-      confidence: hasPurchaseAgreement ? 0.84 : 0.0,
-      evidence: hasPurchaseAgreement
-        ? `Up to ${leasebackDays} days after close`
-        : null,
-    });
+  try {
+    const args = JSON.parse(toolCall.function.arguments);
+    return { extraction: args };
+  } catch (e: any) {
+    return { extraction: null, error: `Could not parse model output: ${e?.message ?? e}` };
   }
-
-  // Documentation fields
-  fields.push({
-    field_name: "proof_of_funds_present",
-    field_value: hasProofOfFunds,
-    confidence: hasProofOfFunds ? 0.96 : 0.1,
-    evidence: hasProofOfFunds
-      ? "Proof of funds document attached and verified"
-      : null,
-  });
-
-  fields.push({
-    field_name: "preapproval_present",
-    field_value: hasPreApproval,
-    confidence: hasPreApproval ? 0.95 : 0.1,
-    evidence: hasPreApproval
-      ? "Pre-approval letter attached"
-      : null,
-  });
-
-  fields.push({
-    field_name: "proof_of_income_present",
-    field_value: hasProofOfIncome,
-    confidence: hasProofOfIncome ? 0.91 : 0.1,
-    evidence: hasProofOfIncome
-      ? "Income documentation provided"
-      : null,
-  });
-
-  fields.push({
-    field_name: "addenda_present",
-    field_value: hasAddenda,
-    confidence: hasAddenda ? 0.87 : 0.1,
-    evidence: hasAddenda ? "Addenda documents present" : null,
-  });
-
-  fields.push({
-    field_name: "disclosure_acknowledgment_present",
-    field_value: hasDisclosures,
-    confidence: hasDisclosures ? 0.82 : 0.1,
-    evidence: hasDisclosures
-      ? "Buyer acknowledges receipt of Transfer Disclosure Statement"
-      : null,
-  });
-
-  // Computed summary fields
-  const totalFields = fields.length;
-  const foundFields = fields.filter((f) => f.field_value !== null && f.confidence > 0.5).length;
-  const completeness = Math.round((foundFields / totalFields) * 100);
-
-  const missingItems: string[] = [];
-  if (!hasProofOfFunds) missingItems.push("Proof of funds not provided");
-  if (!hasPreApproval && !isCash) missingItems.push("Pre-approval letter missing");
-  if (!hasPurchaseAgreement) missingItems.push("Purchase agreement not found");
-  if (!hasProofOfIncome) missingItems.push("No income documentation");
-
-  const notableRisks: string[] = [];
-  if (!isCash && !hasPreApproval) notableRisks.push("Financed offer without pre-approval increases uncertainty");
-  if (inspDays > 14) notableRisks.push(`Extended ${inspDays}-day inspection period increases renegotiation risk`);
-  if (closeDays > 35) notableRisks.push(`${closeDays}-day close creates extended market exposure`);
-  if (!isCash) notableRisks.push("Active contingencies increase fall-through risk");
-
-  const notableStrengths: string[] = [];
-  if (isCash) notableStrengths.push("All-cash offer eliminates financing risk");
-  if (hasProofOfFunds) notableStrengths.push("Verified proof of funds on file");
-  if (hasPreApproval) notableStrengths.push("Lender pre-approval confirmed");
-  if (completeness >= 90) notableStrengths.push("Comprehensive documentation package");
-  if (closeDays <= 21) notableStrengths.push("Fast close timeline demonstrates urgency");
-
-  fields.push({
-    field_name: "package_completeness",
-    field_value: `${completeness}%`,
-    confidence: 0.9,
-    evidence: null,
-  });
-
-  fields.push({
-    field_name: "missing_items",
-    field_value: missingItems,
-    confidence: 0.85,
-    evidence: null,
-  });
-
-  fields.push({
-    field_name: "notable_risks",
-    field_value: notableRisks,
-    confidence: 0.88,
-    evidence: null,
-  });
-
-  fields.push({
-    field_name: "notable_strengths",
-    field_value: notableStrengths,
-    confidence: 0.92,
-    evidence: null,
-  });
-
-  return fields;
 }
+
+// ─── Field normalization ────────────────────────────────────────────────────
+
+function normalizeFields(
+  raw: any,
+  docs: DocWithText[],
+): { fields: ExtractedField[]; missing_items: string[]; notable_risks: string[]; notable_strengths: string[] } {
+  const docByName = new Map(docs.map((d) => [d.name, d]));
+
+  const fields: ExtractedField[] = (raw?.fields ?? []).map((f: any) => {
+    const sourceDoc = f.source_document_name ? docByName.get(f.source_document_name) : null;
+    return {
+      field_name: f.field_name,
+      field_value: f.field_value,
+      confidence: typeof f.confidence === "number" ? f.confidence : 0,
+      evidence: f.evidence ?? null,
+      source_document_id: sourceDoc?.id ?? null,
+      source_document_name: f.source_document_name ?? null,
+    };
+  });
+
+  return {
+    fields,
+    missing_items: Array.isArray(raw?.missing_items) ? raw.missing_items : [],
+    notable_risks: Array.isArray(raw?.notable_risks) ? raw.notable_risks : [],
+    notable_strengths: Array.isArray(raw?.notable_strengths) ? raw.notable_strengths : [],
+  };
+}
+
+function fieldMapFrom(fields: ExtractedField[]): Record<string, any> {
+  const m: Record<string, any> = {};
+  for (const f of fields) {
+    if (f.field_value !== null && f.field_value !== undefined && f.confidence > 0.3) {
+      m[f.field_name] = f.field_value;
+    }
+  }
+  return m;
+}
+
+// ─── Handler ────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, serviceKey);
-
-    // Validate JWT from the Authorization header
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing authorization header" }), {
-        status: 401,
+    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+    if (!lovableKey) {
+      return new Response(JSON.stringify({ error: "LOVABLE_API_KEY not configured" }), {
+        status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const supabase = createClient(supabaseUrl, serviceKey);
 
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Missing authorization header" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Invalid token" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const body = await req.json();
-    const { offer_id, offer_name, documents } = body;
-
-    if (!offer_id || !offer_name || !documents || !Array.isArray(documents)) {
+    const { offer_id, offer_name, documents } = body as {
+      offer_id: string;
+      offer_name: string;
+      documents: DocInput[];
+    };
+    if (!offer_id || !offer_name || !Array.isArray(documents) || documents.length === 0) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields: offer_id, offer_name, documents" }),
+        JSON.stringify({ error: "Missing offer_id, offer_name, or documents" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Verify the offer belongs to this user
+    // Verify ownership
     const { data: offer, error: offerErr } = await supabase
       .from("offers")
       .select("id, user_id")
       .eq("id", offer_id)
       .eq("user_id", user.id)
       .maybeSingle();
-
     if (offerErr || !offer) {
       return new Response(
         JSON.stringify({ error: "Offer not found or access denied" }),
@@ -335,123 +344,167 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Get the next version number
-    const { data: existingFields } = await supabase
+    // Load full document records (file_path, mime, cached text)
+    const docIds = documents.map((d) => d.id).filter(Boolean);
+    const { data: docRows } = await supabase
+      .from("documents")
+      .select("id, name, category, file_path, mime_type, extracted_text")
+      .in("id", docIds);
+
+    const docMap = new Map((docRows ?? []).map((d: any) => [d.id, d]));
+
+    // Mark all as extracting
+    await supabase
+      .from("documents")
+      .update({ status: "extracting" })
+      .in("id", docIds);
+
+    // Parse each document
+    const parsed: DocWithText[] = [];
+    for (const d of documents) {
+      const row = docMap.get(d.id);
+      if (!row) {
+        parsed.push({ id: d.id, name: d.name, category: d.category, text: "", error: "Document row not found" });
+        continue;
+      }
+      const { text, error } = await downloadAndParse(supabase, row);
+      parsed.push({ id: d.id, name: d.name, category: d.category, text, error });
+
+      // Cache text + update status per doc
+      await supabase
+        .from("documents")
+        .update({
+          extracted_text: text || null,
+          extraction_error: error ?? null,
+          status: error ? "error" : "verified",
+          confidence: text && text.length > 200 ? 95 : text.length > 0 ? 70 : 20,
+        })
+        .eq("id", d.id);
+    }
+
+    // Bail out early if literally nothing parsed
+    const anyText = parsed.some((p) => p.text && p.text.length > 50);
+    if (!anyText) {
+      return new Response(
+        JSON.stringify({
+          error: "No readable text extracted from any document. Upload PDFs with selectable text or text files.",
+          per_document_errors: parsed.map((p) => ({ name: p.name, error: p.error })),
+        }),
+        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // Run AI extraction
+    const { extraction, error: aiErr } = await callLovableAI(lovableKey, parsed, offer_name);
+    if (!extraction) {
+      return new Response(
+        JSON.stringify({ error: aiErr ?? "AI extraction failed" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const { fields, missing_items, notable_risks, notable_strengths } = normalizeFields(extraction, parsed);
+
+    // Versioning
+    const { data: existing } = await supabase
       .from("extracted_offer_fields")
       .select("version")
       .eq("offer_id", offer_id)
       .order("version", { ascending: false })
       .limit(1);
+    const nextVersion = existing && existing.length > 0 ? (existing[0].version ?? 0) + 1 : 1;
 
-    const nextVersion = existingFields && existingFields.length > 0
-      ? (existingFields[0].version ?? 0) + 1
-      : 1;
-
-    // Generate mock extraction
-    const extractedFields = generateMockExtraction(documents, offer_name);
-
-    // Store extracted fields
-    const rows = extractedFields.map((f) => ({
+    // Persist per-field rows
+    const rows = fields.map((f) => ({
       offer_id,
       field_name: f.field_name,
       field_value: f.field_value,
       confidence: f.confidence,
       evidence: f.evidence,
+      source_document_id: f.source_document_id,
+      source_document_name: f.source_document_name,
       version: nextVersion,
     }));
+
+    // Append the summary collections as their own field rows so the UI can read them
+    rows.push(
+      { offer_id, field_name: "missing_items", field_value: missing_items, confidence: 0.9, evidence: null, source_document_id: null, source_document_name: null, version: nextVersion },
+      { offer_id, field_name: "notable_risks", field_value: notable_risks, confidence: 0.9, evidence: null, source_document_id: null, source_document_name: null, version: nextVersion },
+      { offer_id, field_name: "notable_strengths", field_value: notable_strengths, confidence: 0.9, evidence: null, source_document_id: null, source_document_name: null, version: nextVersion },
+    );
 
     const { error: insertErr } = await supabase
       .from("extracted_offer_fields")
       .insert(rows);
-
     if (insertErr) {
       console.error("Insert error:", insertErr);
       return new Response(
-        JSON.stringify({ error: "Failed to store extraction results", detail: insertErr.message }),
+        JSON.stringify({ error: "Failed to store extraction", detail: insertErr.message }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Update offer with key extracted values
-    const fieldMap: Record<string, any> = {};
-    for (const f of extractedFields) {
-      fieldMap[f.field_name] = f.field_value;
+    // Roll up into the offers row
+    const m = fieldMapFrom(fields);
+    const contingencies: string[] = [];
+    if (m.inspection_contingency_present) {
+      contingencies.push(m.inspection_contingency_days ? `Inspection (${m.inspection_contingency_days} days)` : "Inspection");
     }
+    if (m.appraisal_contingency_present) contingencies.push("Appraisal");
+    if (m.loan_contingency_present) contingencies.push("Loan");
+
+    // Compute completeness from confidence + presence of key docs
+    const expected = ["offer_price", "financing_type", "earnest_money_deposit", "close_of_escrow_days", "down_payment_percent"];
+    const expectedHits = expected.filter((k) => m[k] !== undefined).length;
+    const completeness = Math.round((expectedHits / expected.length) * 100);
 
     const offerUpdate: Record<string, any> = {
-      offer_price: fieldMap.offer_price ?? null,
-      financing_type: fieldMap.financing_type ?? null,
-      down_payment: fieldMap.down_payment_amount ?? null,
-      down_payment_percent: fieldMap.down_payment_percent ?? null,
-      earnest_money: fieldMap.earnest_money_deposit ?? null,
-      close_days: fieldMap.close_of_escrow_days ?? null,
-      close_timeline: fieldMap.close_of_escrow_days
-        ? `${fieldMap.close_of_escrow_days} days`
-        : null,
-      inspection_period: fieldMap.inspection_contingency_days
-        ? `${fieldMap.inspection_contingency_days} days`
-        : null,
-      leaseback_request: fieldMap.leaseback_requested
-        ? `${fieldMap.leaseback_days ?? 0}-day rent-free leaseback`
+      buyer_name: m.buyer_name ?? offer_name,
+      agent_name: m.agent_name ?? null,
+      agent_brokerage: m.agent_brokerage ?? null,
+      offer_price: m.offer_price ?? null,
+      financing_type: m.financing_type ?? null,
+      down_payment: m.down_payment_amount ?? null,
+      down_payment_percent: m.down_payment_percent ?? null,
+      earnest_money: m.earnest_money_deposit ?? null,
+      close_days: m.close_of_escrow_days ?? null,
+      close_timeline: m.close_of_escrow_days ? `${m.close_of_escrow_days} days` : null,
+      inspection_period: m.inspection_contingency_days ? `${m.inspection_contingency_days} days` : null,
+      leaseback_request: m.leaseback_requested
+        ? (m.leaseback_days ? `${m.leaseback_days}-day leaseback` : "Requested")
         : "None",
-      proof_of_funds: fieldMap.proof_of_funds_present ?? false,
-      pre_approval: fieldMap.preapproval_present ?? false,
-      completeness: parseInt(String(fieldMap.package_completeness ?? "0")),
+      concessions: m.concessions_requested ?? "None",
+      proof_of_funds: m.proof_of_funds_present ?? false,
+      pre_approval: m.preapproval_present ?? false,
+      contingencies,
+      completeness,
+      special_notes: m.special_notes ?? null,
       updated_at: new Date().toISOString(),
     };
-
-    // Build contingencies array
-    const contingencies: string[] = [];
-    if (fieldMap.inspection_contingency_present) {
-      contingencies.push(`Inspection (${fieldMap.inspection_contingency_days} days)`);
-    }
-    if (fieldMap.appraisal_contingency_present) {
-      contingencies.push("Appraisal");
-    }
-    if (fieldMap.loan_contingency_present) {
-      contingencies.push("Loan");
-    }
-    offerUpdate.contingencies = contingencies;
 
     const { error: updateErr } = await supabase
       .from("offers")
       .update(offerUpdate)
       .eq("id", offer_id);
-
-    if (updateErr) {
-      console.error("Offer update error:", updateErr);
-    }
-
-    // Update document statuses
-    for (const doc of documents) {
-      if (doc.id) {
-        await supabase
-          .from("documents")
-          .update({
-            status: "verified",
-            confidence: Math.round(70 + Math.random() * 28),
-          })
-          .eq("id", doc.id);
-      }
-    }
+    if (updateErr) console.error("Offer update error:", updateErr);
 
     return new Response(
       JSON.stringify({
         success: true,
         version: nextVersion,
-        fields_count: extractedFields.length,
-        extraction: extractedFields,
-        missing_items: fieldMap.missing_items ?? [],
-        notable_risks: fieldMap.notable_risks ?? [],
-        notable_strengths: fieldMap.notable_strengths ?? [],
-        completeness: fieldMap.package_completeness ?? "0%",
+        fields_count: fields.length,
+        completeness: `${completeness}%`,
+        missing_items,
+        notable_risks,
+        notable_strengths,
+        per_document_errors: parsed.filter((p) => p.error).map((p) => ({ name: p.name, error: p.error })),
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error("Extraction error:", err);
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
+      JSON.stringify({ error: "Internal server error", detail: err?.message ?? String(err) }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
