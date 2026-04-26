@@ -1,10 +1,11 @@
 import AppLayout from '@/components/AppLayout';
-import { sampleProperty, formatCurrency } from '@/data/sampleData';
+import { formatCurrency } from '@/data/sampleData';
 import {
-  CheckCircle, AlertCircle, Clock, FileText, ChevronDown, Upload,
-  Plus, Shield, Eye, AlertTriangle, Sparkles, X, Info, Brain, Loader2, Target, TrendingUp, AlertOctagon
+  CheckCircle, AlertCircle, Clock, FileText, Upload,
+  Plus, Shield, Eye, AlertTriangle, Sparkles, X, Info, Loader2, ArrowRight
 } from 'lucide-react';
 import { useState, useCallback, useRef } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -13,9 +14,6 @@ import {
   uploadDocument,
   triggerExtraction,
 } from '@/lib/offerService';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 // --------------- types ---------------
 
@@ -35,9 +33,10 @@ interface UploadedDoc {
   id: string;
   file: File;
   category: DocCategory;
-  status: 'uploading' | 'extracting' | 'complete' | 'error';
+  status: 'queued' | 'uploading' | 'stored' | 'extracting' | 'complete' | 'error';
   progress: number;
   dbDocId?: string;
+  errorMessage?: string;
 }
 
 interface ExtractionField {
@@ -58,6 +57,7 @@ interface OfferPackage {
   status: 'uploading' | 'extracting' | 'complete' | 'idle';
   dbOfferId?: string;
   dbExtractionResult?: any;
+  extractionError?: string;
 }
 
 // --------------- mock extraction ---------------
