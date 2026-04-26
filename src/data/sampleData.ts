@@ -22,6 +22,15 @@ export interface Offer {
   documents: DocumentItem[];
   scores: OfferScores;
   labels: string[];
+  /** Optional per-field evidence pulled from extracted_offer_fields */
+  evidence?: Record<string, FieldEvidence | undefined>;
+}
+
+export interface FieldEvidence {
+  value: any;
+  confidence: number;
+  quote: string | null;
+  documentName: string | null;
 }
 
 export interface DocumentItem {
