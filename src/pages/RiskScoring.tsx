@@ -3,7 +3,7 @@ import AppLayout from '@/components/AppLayout';
 import { formatCurrency } from '@/data/sampleData';
 import EmptyDealState from '@/components/EmptyDealState';
 import { computeScores, type ScoreDetail } from '@/lib/scoringEngine';
-import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, Database, Loader2, CheckCircle2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, Database, Loader2, CheckCircle2, FileText, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { fetchLatestAnalysisForUser, fetchOffersWithExtraction, saveRiskScore } from '@/lib/offerService';
 import { adaptOffer } from '@/lib/offerAdapter';
@@ -256,6 +256,29 @@ export default function RiskScoring() {
                               </div>
                             )}
                             <p className="text-[10px] text-muted-foreground font-body leading-relaxed ml-[18px]">{f.explanation}</p>
+                            {f.source && (f.source.quote || f.source.documentName) && (
+                              <div className="ml-[18px] mt-1.5 p-2 rounded-sm bg-muted/40 border border-border/50">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <FileText className="w-2.5 h-2.5 text-muted-foreground" strokeWidth={1.5} />
+                                  <span className="text-[9px] tracking-[0.12em] uppercase text-muted-foreground font-body font-medium">
+                                    {f.source.documentName ?? 'Source document'}
+                                  </span>
+                                  {f.source.confidence < 0.7 && (
+                                    <span className="flex items-center gap-0.5 text-[9px] text-warning font-body font-medium">
+                                      <AlertTriangle className="w-2.5 h-2.5" strokeWidth={1.5} /> Verify
+                                    </span>
+                                  )}
+                                  <span className="ml-auto text-[9px] text-muted-foreground font-body tabular-nums">
+                                    {Math.round(f.source.confidence * 100)}%
+                                  </span>
+                                </div>
+                                {f.source.quote && (
+                                  <p className="text-[10px] text-foreground/80 font-body italic leading-relaxed">
+                                    "{f.source.quote}"
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
