@@ -1,32 +1,79 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, Plus, X, FileText } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
 import AppLayout from '@/components/AppLayout';
-
-const docCategories = ['Purchase Agreement', 'Proof of Funds', 'Pre-Approval', 'Proof of Income', 'Addenda', 'Disclosures', 'Other'];
-
-interface UploadedFile { name: string; category: string; offer: string }
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 export default function NewAnalysis() {
   const navigate = useNavigate();
-  const [files, setFiles] = useState<UploadedFile[]>([
-    { name: 'Nakamura_Purchase_Agreement.pdf', category: 'Purchase Agreement', offer: 'Offer A' },
-    { name: 'Nakamura_Proof_of_Funds.pdf', category: 'Proof of Funds', offer: 'Offer A' },
-    { name: 'Chen_Purchase_Agreement.pdf', category: 'Purchase Agreement', offer: 'Offer B' },
-    { name: 'Chen_PreApproval.pdf', category: 'Pre-Approval', offer: 'Offer B' },
-  ]);
+  const { toast } = useToast();
+  const [address, setAddress] = useState('1247 Stone Canyon Rd, Bel Air, CA 90077');
+  const [city, setCity] = useState('Bel Air, CA 90077');
+  const [listingPrice, setListingPrice] = useState('8750000');
+  const [propertyType, setPropertyType] = useState('Single Family');
+  const [sellerGoals, setSellerGoals] = useState('Maximize net, close in 35 days');
+  const [sellerNotes, setSellerNotes] = useState('Seller prefers 30-day close, open to short leaseback. Motivated but wants strong terms.');
+  const [busy, setBusy] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
-  const grouped = files.reduce<Record<string, UploadedFile[]>>((acc, f) => {
-    (acc[f.offer] ??= []).push(f);
-    return acc;
-  }, {});
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => setUserId(user?.id ?? null));
+  }, []);
+
+  const createAndContinue = async () => {
+    if (!userId) {
+      toast({ title: 'Please sign in first', variant: 'destructive' });
+      navigate('/auth');
+      return;
+    }
+    setBusy(true);
+    try {
+      const { data: prop, error: propErr } = await supabase
+        .from('properties')
+        .insert({
+          user_id: userId,
+          address: address.trim() || 'Untitled property',
+          city: city.trim() || null,
+          listing_price: Number(listingPrice.replace(/[^0-9.]/g, '')) || null,
+          property_type: propertyType,
+          status: 'Active',
+          seller_notes: sellerNotes,
+          seller_goals: sellerGoals ? [sellerGoals] : [],
+        })
+        .select('id')
+        .single();
+      if (propErr) throw propErr;
+
+      const { error: daErr } = await supabase
+        .from('deal_analyses')
+        .insert({
+          user_id: userId,
+          property_id: prop.id,
+          name: address.trim() || 'New Analysis',
+          status: 'in_progress',
+        });
+      if (daErr) throw daErr;
+
+      toast({ title: 'Analysis created', description: 'Now upload your offer packages.' });
+      navigate('/offer-intake');
+    } catch (e: any) {
+      console.error(e);
+      toast({ title: 'Could not create analysis', description: e?.message ?? 'Try again.', variant: 'destructive' });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <AppLayout>
       <div className="max-w-3xl mx-auto space-y-10 animate-fade-in">
         <div>
           <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">New Analysis</p>
-          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Upload Offers</h1>
+          <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Start a New Analysis</h1>
+          <p className="text-[13px] text-muted-foreground font-body mt-2">
+            Tell us about the listing. Next step you'll upload offer packages and we'll extract terms.
+          </p>
         </div>
 
         {/* Property Details */}
@@ -35,78 +82,41 @@ export default function NewAnalysis() {
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">Property Address</label>
-              <input defaultValue="1247 Stone Canyon Rd, Bel Air, CA 90077" className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input value={address} onChange={(e) => setAddress(e.target.value)} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">City / Region</label>
+              <input value={city} onChange={(e) => setCity(e.target.value)} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">Listing Price</label>
-              <input defaultValue="$8,750,000" className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input value={listingPrice} onChange={(e) => setListingPrice(e.target.value)} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">Property Type</label>
-              <select defaultValue="Single Family" className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring">
+              <select value={propertyType} onChange={(e) => setPropertyType(e.target.value)} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring">
                 <option>Single Family</option><option>Condo</option><option>Townhouse</option><option>Multi-Family</option>
               </select>
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">Seller Goals</label>
-              <input defaultValue="Maximize net, close in 35 days" className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input value={sellerGoals} onChange={(e) => setSellerGoals(e.target.value)} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">Seller Notes</label>
-            <textarea defaultValue="Seller prefers 30-day close, open to short leaseback. Motivated but wants strong terms." rows={3} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
+            <textarea value={sellerNotes} onChange={(e) => setSellerNotes(e.target.value)} rows={3} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
           </div>
-        </div>
-
-        {/* Upload */}
-        <div className="card-elevated p-6 space-y-5">
-          <h2 className="heading-display text-lg font-semibold">Upload Offer Packages</h2>
-          <div className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-gold/40 transition-colors cursor-pointer">
-            <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm font-medium text-foreground font-body mb-1">Drop files here or click to upload</p>
-            <p className="text-xs text-muted-foreground font-body">PDF, DOCX, JPG — up to 50MB per file</p>
-          </div>
-
-          {/* Grouped Files */}
-          {Object.entries(grouped).map(([offer, docs]) => (
-            <div key={offer} className="border border-border rounded-lg overflow-hidden">
-              <div className="bg-muted/50 px-4 py-2.5 flex items-center justify-between">
-                <span className="text-sm font-medium font-body">{offer}</span>
-                <span className="text-xs text-muted-foreground font-body">{docs.length} documents</span>
-              </div>
-              <div className="divide-y divide-border">
-                {docs.map((d, i) => (
-                  <div key={i} className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <FileText className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm font-body">{d.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="badge-info text-xs">{d.category}</span>
-                      <button onClick={() => setFiles(f => f.filter((_, j) => !(f[j] === d)))} className="p-1 hover:bg-muted rounded">
-                        <X className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          <button className="flex items-center gap-2 text-sm text-gold font-medium font-body hover:underline">
-            <Plus className="w-4 h-4" /> Add Another Offer Package
-          </button>
         </div>
 
         <div className="flex justify-end gap-3">
-          <button className="px-5 py-2.5 border border-border rounded-lg text-sm font-medium font-body hover:bg-muted transition-colors">
-            Save Draft
-          </button>
           <button
-            onClick={() => navigate('/offer-intake')}
-            className="px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium font-body hover:opacity-90 transition-opacity"
+            onClick={createAndContinue}
+            disabled={busy}
+            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium font-body hover:opacity-90 transition-opacity disabled:opacity-60"
           >
-            Begin AI Analysis
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+            Continue to Upload Offers
           </button>
         </div>
       </div>
