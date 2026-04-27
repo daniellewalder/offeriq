@@ -24,6 +24,7 @@ import {
   createSharedPortal,
   revokePortal,
 } from "@/lib/portalService";
+import { setStoredActiveAnalysisId } from "@/lib/activeAnalysis";
 
 interface Props {
   deal: DealCard;
@@ -121,7 +122,10 @@ export default function DealPortalCard({ deal, userId, onChanged }: Props) {
     }
   };
 
-  const openAnalysis = () => navigate("/report");
+  const openAnalysis = () => {
+    setStoredActiveAnalysisId(deal.analysisId);
+    navigate(`/comparison?analysis=${deal.analysisId}`);
+  };
 
   return (
     <div className="card-elevated p-5 group hover:border-accent/30 transition-colors">
