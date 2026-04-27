@@ -568,71 +568,6 @@ interface StrategistAnalysis {
   top_tradeoffs: { tradeoff: string; recommendation: string }[];
 }
 
-// Realistic mock analysis
-const MOCK_ANALYSIS: StrategistAnalysis = {
-  highest_offer: {
-    buyer: 'Robert Ashford III',
-    price: 9250000,
-    note: "The biggest number on the board, but it comes with three contingencies and a 45-day timeline. In luxury real estate, a high price that doesn't close is just a number on paper.",
-  },
-  safest_offer: {
-    buyer: 'The Nakamura Trust',
-    close_probability: 94,
-    note: 'All-cash, 21-day close, JPMorgan-verified funds, and one of the top luxury agents in LA running the deal. If certainty is the priority, this is the cleanest path to the closing table.',
-  },
-  cleanest_offer: {
-    buyer: 'The Nakamura Trust',
-    contingency_count: 1,
-    note: "Only one contingency — a 7-day inspection — and it's waived on appraisal. The Nakamura Trust is asking for almost nothing structurally, which means fewer points where the deal can unravel.",
-  },
-  best_balance_offer: {
-    buyer: 'David & Sarah Chen',
-    note: "The Chens aren't the highest or the fastest, but they're the most likely to actually close without drama. 100% package completeness, First Republic pre-approval, and they've volunteered flexibility on leaseback. When you factor in execution risk, the Chens' $8.9M is worth more than Ashford's $9.25M.",
-  },
-  ranking_summary: "You're choosing between Nakamura's speed and certainty at $9.1M, the Chens' reliability at $8.9M, and Ashford's top-dollar price with significant execution risk. Westside is playing a concession game that undercuts their own speed advantage, and the Kapoors are a strong dark horse with appraisal gap coverage that most financed buyers won't offer at this price point.",
-  offer_by_offer_notes: [
-    {
-      buyer: 'The Nakamura Trust',
-      headline: 'Speed and certainty at a premium',
-      analysis: "All-cash, 21-day close, minimal contingencies. The $9.1M price is $350K above list and the JPMorgan verification letter is as strong as proof-of-funds gets. The only question is whether you want to leave $150K on the table versus Ashford's higher but riskier number.",
-    },
-    {
-      buyer: 'David & Sarah Chen',
-      headline: 'The deal that actually closes',
-      analysis: "The best-prepared package in the group — every document present, leaseback flexibility offered unprompted, and a First Republic pre-approval that carries weight. Two contingencies are standard for a financed offer at this price. If you counter to $8.95M with tightened timelines, this becomes the strongest overall position.",
-    },
-    {
-      buyer: 'Westside Holdings LLC',
-      headline: 'Fast but asking for too much',
-      analysis: "A 14-day close sounds compelling until you factor in the $50K concession request on top of the lowest price. The LLC structure also means you need to verify who you're actually selling to. Goldman-backed funds are real, but the operating agreement is still pending review.",
-    },
-    {
-      buyer: 'Robert Ashford III',
-      headline: 'Biggest number, biggest risk',
-      analysis: "At $9.25M, this is $500K above list — but three contingencies, a 45-day timeline, and a paid leaseback request create multiple exit points. The $150K earnest money deposit is also the lowest relative to offer price in the group, which tells you something about commitment level.",
-    },
-    {
-      buyer: 'Priya & Arun Kapoor',
-      headline: 'The smart underdog',
-      analysis: "Don't overlook the Kapoors. They volunteered appraisal gap coverage up to $200K — a move that eliminates one of the most common deal-killers for financed offers in luxury markets. Chase Private Client backing, 28-day close, and a rent-free leaseback. If you counter at $8.95M, this could be your safest financed path.",
-    },
-  ],
-  top_tradeoffs: [
-    {
-      tradeoff: 'Take Nakamura at $9.1M for certainty, or counter Ashford to push toward $9.2M+ with tighter terms?',
-      recommendation: "Counter Nakamura to $9.15M with a 14-day close. They're relocating and motivated — they'll likely accept. Don't chase Ashford's number unless you're willing to wait 45 days and absorb the risk of three contingencies falling through.",
-    },
-    {
-      tradeoff: "Is the Chens' reliability worth $200K less than the top offer?",
-      recommendation: "Yes, if you value certainty. Counter the Chens to $8.95M with 7-day inspections and 21-day loan contingency. Their agent has already signaled flexibility. The net-to-seller difference after accounting for Ashford's concession requests and timeline risk is closer to $100K than $350K.",
-    },
-    {
-      tradeoff: 'Should you engage Westside Holdings despite the low price?',
-      recommendation: "Only as leverage. Let the other buyers know you have a cash offer with a 14-day close. Don't counter Westside directly — their $50K concession request and below-list pricing signal they're looking for a deal, not paying a premium.",
-    },
-  ],
-};
-
 function AIStrategistPanel({
   highest,
   safest,
@@ -650,7 +585,7 @@ function AIStrategistPanel({
 }) {
   const [isOpen, setIsOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const [analysis, setAnalysis] = useState<StrategistAnalysis>(MOCK_ANALYSIS);
+  const [analysis, setAnalysis] = useState<StrategistAnalysis | null>(null);
   const [activeTab, setActiveTab] = useState<'summary' | 'offers' | 'tradeoffs'>('summary');
   const { toast } = useToast();
 
@@ -706,6 +641,14 @@ function AIStrategistPanel({
     }
   };
 
+  // Auto-run on mount / whenever the offer set changes, so the panel
+  // never shows analysis from a different deal.
+  const offerSig = offers.map(o => `${o.id}:${o.offerPrice}`).join('|');
+  useEffect(() => {
+    if (offers.length > 0) runAnalysis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offerSig]);
+
   const categoryCards = [
     { label: 'Highest Price', icon: Crown, buyer: analysis.highest_offer.buyer, detail: formatCurrency(analysis.highest_offer.price), note: analysis.highest_offer.note, accent: 'border-accent/40' },
     { label: 'Safest Close', icon: Shield, buyer: analysis.safest_offer.buyer, detail: `${analysis.safest_offer.close_probability}% close prob.`, note: analysis.safest_offer.note, accent: 'border-success/40' },
@@ -745,8 +688,20 @@ function AIStrategistPanel({
         </div>
       </button>
 
-      {isOpen && analysis && (
+      {isOpen && (
         <div className="border-t border-border">
+          {!analysis && isLoading && (
+            <div className="p-8 text-center text-[13px] text-muted-foreground font-body">
+              Analyzing your {offers.length === 1 ? 'offer' : `${offers.length} offers`} for {property.address}…
+            </div>
+          )}
+          {!analysis && !isLoading && (
+            <div className="p-8 text-center text-[13px] text-muted-foreground font-body">
+              Click <span className="text-foreground font-medium">Re-analyze</span> to generate a strategist read of these offers.
+            </div>
+          )}
+          {analysis && (
+          <>
           {/* Tabs */}
           <div className="flex border-b border-border/60 px-5">
             {([
@@ -837,6 +792,8 @@ function AIStrategistPanel({
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
       )}
     </div>
