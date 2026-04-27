@@ -8,12 +8,12 @@ import { useToast } from '@/hooks/use-toast';
 export default function NewAnalysis() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [address, setAddress] = useState('1247 Stone Canyon Rd, Bel Air, CA 90077');
-  const [city, setCity] = useState('Bel Air, CA 90077');
-  const [listingPrice, setListingPrice] = useState('8750000');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [listingPrice, setListingPrice] = useState('');
   const [propertyType, setPropertyType] = useState('Single Family');
-  const [sellerGoals, setSellerGoals] = useState('Maximize net, close in 35 days');
-  const [sellerNotes, setSellerNotes] = useState('Seller prefers 30-day close, open to short leaseback. Motivated but wants strong terms.');
+  const [sellerGoals, setSellerGoals] = useState('');
+  const [sellerNotes, setSellerNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -25,6 +25,10 @@ export default function NewAnalysis() {
     if (!userId) {
       toast({ title: 'Please sign in first', variant: 'destructive' });
       navigate('/auth');
+      return;
+    }
+    if (!address.trim()) {
+      toast({ title: 'Property address required', description: 'Enter the listing address before continuing.', variant: 'destructive' });
       return;
     }
     setBusy(true);
@@ -82,15 +86,15 @@ export default function NewAnalysis() {
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">Property Address</label>
-              <input value={address} onChange={(e) => setAddress(e.target.value)} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="e.g. 2339 Lyric Ave, Los Angeles, CA" className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">City / Region</label>
-              <input value={city} onChange={(e) => setCity(e.target.value)} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Los Angeles, CA 90027" className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">Listing Price</label>
-              <input value={listingPrice} onChange={(e) => setListingPrice(e.target.value)} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input value={listingPrice} onChange={(e) => setListingPrice(e.target.value)} placeholder="e.g. 2495000" className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">Property Type</label>
@@ -100,12 +104,12 @@ export default function NewAnalysis() {
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">Seller Goals</label>
-              <input value={sellerGoals} onChange={(e) => setSellerGoals(e.target.value)} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input value={sellerGoals} onChange={(e) => setSellerGoals(e.target.value)} placeholder="e.g. Maximize net, close in 30 days" className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground font-body block mb-1.5">Seller Notes</label>
-            <textarea value={sellerNotes} onChange={(e) => setSellerNotes(e.target.value)} rows={3} className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
+            <textarea value={sellerNotes} onChange={(e) => setSellerNotes(e.target.value)} rows={3} placeholder="Anything the seller has told you about timing, leaseback, repairs, motivation…" className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-background font-body focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
           </div>
         </div>
 
