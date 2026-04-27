@@ -229,12 +229,11 @@ export const sampleProperty: Property = {
   ],
 };
 
-export const recentProperties: { id: string; address: string; offers: number; status: string; lastUpdated: string; topRec: string }[] = [
-  { id: 'prop-001', address: '1247 Stone Canyon Rd, Bel Air', offers: 5, status: 'Reviewing Offers', lastUpdated: '2 hours ago', topRec: 'Offer B — Best Balance' },
-  { id: 'prop-002', address: '815 N Rodeo Dr, Beverly Hills', offers: 3, status: 'Counter Sent', lastUpdated: '1 day ago', topRec: 'Offer A — Highest' },
-  { id: 'prop-003', address: '22160 Pacific Coast Hwy, Malibu', offers: 6, status: 'Pending Review', lastUpdated: '3 hours ago', topRec: 'Offer C — Safest' },
-  { id: 'prop-004', address: '430 N Maple Dr, Beverly Hills', offers: 4, status: 'Analysis Complete', lastUpdated: '5 days ago', topRec: 'Offer B — Best Balance' },
-];
+/**
+ * recentProperties is intentionally empty — Dashboard reads real deals from the DB.
+ * Kept as an exported empty array to avoid breaking any leftover imports.
+ */
+export const recentProperties: { id: string; address: string; offers: number; status: string; lastUpdated: string; topRec: string }[] = [];
 
 export const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);

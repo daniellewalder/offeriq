@@ -1,132 +1,79 @@
+# Make this a real, agent-usable tool
 
-## Goal
+Goal: An agent should sign in, hit "New Analysis," upload real PDFs, and watch the system actually read the contract — with one labeled demo deal kept around purely as a teaching example. No mock data leaking into "real" views.
 
-Make the analysis trustworthy enough that a listing agent can sit next to their seller, point at the screen, and say *"this is the offer — here's exactly why"* — and have every number on screen be defensible, sourced, and traceable to the actual offer documents.
+---
 
-Right now two things block that:
-1. `supabase/functions/extract-offer/index.ts` returns **hash-based fake data** — every "extracted" price, deposit, and contingency is invented, not read from the uploaded PDFs.
-2. `src/lib/scoringEngine.ts` runs heuristics on those fake numbers and shows a score with no link back to a document line.
+## What changes
 
-A seller asking "where did you get $1.2M from?" currently has no answer.
+### 1. Sample data — keep one, kill the rest
 
-## What we're building
+- **Keep** the Bel Air Stone Canyon deal in `src/data/sampleData.ts` (all 5 offers stay) **but only ever surface it behind a clearly labeled "Demo deal — example only" badge** on the Dashboard. Never on real analyses.
+- **Remove** `MOCK_EXTRACTION` from `OfferIntake.tsx` and remove the silent fallback in `runExtraction` that pretends mock data is real extraction. If real extraction fails, show the actual error.
+- **Remove** `recentProperties` mock list — Dashboard should only show real properties from the DB plus one pinned demo card.
+- All non-demo pages (Comparison, Risk, Leverage, Counter, Delta, Report, Seller Portal) currently fall back to `sampleProperty` when no real data exists. Replace those fallbacks with `<EmptyDealState />` (already exists) pointing to "Start a new analysis."
 
-### 1. Real document extraction (the foundation)
+### 2. Demo deal becomes a first-class, read-only example
 
-Replace the mock generator with a real Lovable AI extraction pipeline.
+- On Dashboard, render a single pinned card: "Demo Deal — 1247 Stone Canyon Rd (example)" with a Sparkles icon and a tooltip "Sample data so you can see the full experience before uploading your own."
+- Clicking it loads all downstream pages with `sampleProperty` and a top banner: "You're viewing the demo deal. Start a new analysis to upload real offers."
+- Real deals never mix demo data into their views.
 
-- New edge function flow inside `extract-offer`:
-  - For each uploaded document, fetch the file from the `offer-documents` storage bucket
-  - Parse PDFs/images to text (PDF text layer + OCR fallback for scans)
-  - Send the text to Lovable AI (`google/gemini-2.5-pro` for accuracy on long contracts) using **tool calling for structured output** so we get typed fields back, not free-text JSON
-  - For every field, the model must return: `value`, `confidence (0-1)`, and `evidence` (the literal quoted sentence from the document)
-- Fields extracted (matches existing `extracted_offer_fields` schema):
-  - buyer_name, offer_price, financing_type, down_payment / down_payment_percent, earnest_money, contingencies[], inspection_period, appraisal_terms, close_days, leaseback_request, concessions, proof_of_funds, special_notes, missing_items[], notable_risks[], notable_strengths[]
-- Cross-document reconciliation: if purchase agreement says $1.2M but pre-approval says $1.0M, flag it as a `notable_risk` with both quotes
-- Status updates on `documents` table as each one completes (so the UI can show real progress)
+### 3. Harden the upload → extract → display pipeline
 
-### 2. Evidence-backed scoring
+This is the part that's been silently failing. Concrete fixes:
 
-Every score factor in `scoringEngine.ts` already produces an `explanation` string. Extend it to also carry the **document quote and confidence** behind each input.
+**Upload (`OfferIntake.tsx` + `offerService.ts`)**
+- Show a per-file status pill: `Queued → Uploading → Stored → Extracting → Done / Error`, with the actual error message inline (no toast-only failures).
+- After `uploadDocument` returns, immediately re-query the `documents` row to confirm it actually exists. If it doesn't, surface a hard error.
+- Validate file type before upload: PDF, TXT, or known text MIMEs. Reject scanned-image PDFs with a friendly "This looks like a scanned image — text-based PDFs work best" warning (we can still attempt extraction).
 
-- `ScoreDetail.factors[]` gains `source: { document_name, quote, confidence }` when the factor was driven by an extracted field
-- The Risk Scoring page becomes click-to-expand: tap "−10 contingency penalty" → see the actual contract clause that triggered it
-- Low-confidence inputs (< 0.7) visually flagged with a "verify this" badge so the agent can sanity-check before showing the seller
+**Extraction (`extract-offer` edge function)**
+- Already calls Gemini 2.5 Pro on real PDF text — that part is solid.
+- Add a `debug` block to the response: `per_document_chars_extracted`, `model`, `tokens_used` (if available), `version`, `parsed_at`. Show this in a small "Extraction details" disclosure on the offer card so the agent can see exactly what the AI saw.
+- If a PDF parses to <200 chars (likely scanned), return a clear `warning` field instead of running the model on near-empty text.
 
-### 3. Seller-priority-weighted recommendation
+**Display**
+- After extraction completes, immediately navigate the user to `/comparison` with the new offer highlighted, instead of leaving them on the intake page guessing whether anything happened.
+- Comparison/Risk/Leverage pages must read from `fetchOffersWithExtraction(dealAnalysisId)` only — no `sampleProperty` fallback when a real analysis exists.
 
-Today `seller_priorities` weights exist but the "top recommendation" doesn't visibly use them.
+### 4. A "verify" button on each extracted offer
 
-- Build `computeRecommendation(offers, weights)` that produces a single weighted score per offer using the seller's actual priority sliders (price 80, certainty 70, speed 50, etc.)
-- The Comparison page gains a clear **"Recommended: Buyer X"** banner with a one-paragraph plain-English rationale generated by AI, citing the top 3 weighted factors
-- A "what if the seller cared more about speed?" slider lets the agent re-rank live in front of the seller
+A small "Re-extract" button on each uploaded offer card that re-runs the edge function and bumps the version, so when you submit a test offer we can prove the pipeline is live and re-runnable.
 
-### 4. Listing-agent presentation mode
+---
 
-The agent's magic moment is presenting to the seller. Build a focused view for that.
+## Test plan you'll run after this ships
 
-- New route `/present` (auth-required, agent-only) — full-screen, large-type, one offer per slide
-- Slides: Recommendation → Side-by-side comparison → Each offer's strengths/risks with quoted evidence → Counter-strategy options → Net-proceeds estimate
-- Keyboard arrows / spacebar to advance, dark mode by default, no nav chrome
-- "Print to PDF" produces a leave-behind for the seller
+1. Sign in.
+2. Click "Start a new analysis" → fill in property → continue.
+3. Upload one real offer PDF.
+4. Watch status pills move through Stored → Extracting → Done.
+5. See extracted fields with quoted evidence from your actual PDF.
+6. Land on Comparison and see your real offer next to the demo deal (clearly separated).
 
-### 5. Net proceeds calculator (missing feature)
+If any step fails, the failure is visible in the UI with the real error — no silent mock fallback.
 
-Sellers don't care about offer price — they care about **what hits their bank account**. This is the single most-requested missing feature for listing agents.
+---
 
-- Per offer, compute estimated net proceeds: `offer_price − concessions − estimated commission − estimated closing costs − payoff (if entered)`
-- Inputs the agent enters once per deal: commission %, mortgage payoff, transfer-tax rate (state default)
-- Comparison view shows both **Offer Price** and **Estimated Net** columns so the highest offer isn't always the highest net
+## Files touched
 
-### 6. Comparable-sales context (defensibility)
+- `src/data/sampleData.ts` — add `isDemo: true` flag, prune `recentProperties` to empty
+- `src/pages/OfferIntake.tsx` — remove `MOCK_EXTRACTION`, remove silent fallback, add per-file status, navigate on success
+- `src/pages/Dashboard.tsx` — show pinned demo card + real properties from DB
+- `src/pages/Comparison.tsx`, `RiskScoring.tsx`, `Leverage.tsx`, `CounterStrategy.tsx`, `DeltaView.tsx`, `Report.tsx`, `SellerPortal.tsx` — replace `sampleProperty` fallbacks with `<EmptyDealState />` when no real analysis, except when viewing the demo deal
+- `src/lib/offerService.ts` — add post-upload verification re-query
+- `supabase/functions/extract-offer/index.ts` — return debug block + scanned-PDF warning
+- New: small `DemoBanner` component shown at top of demo-deal pages
 
-To defend "this is a strong price," show context.
+No DB migrations needed.
 
-- Add an optional `comps` JSON field on `deal_analyses` the agent can paste in (3–6 nearby recent sales: address, price, sqft, close date)
-- Comparison view shows the property's price-per-sqft alongside the comp band; offer prices plot against that band
-- Lovable AI generates a one-line market-context blurb ("$/sqft is in the top 15% of the last 90 days within 0.5 mi")
+---
 
-### 7. Document-quality gate before scoring
+## What this does NOT include
 
-If extraction confidence is low or key documents are missing, don't pretend to have a real score.
+- Live MLS / comps integration (separate plan).
+- OCR for scanned PDFs (we'll warn, not silently fail).
+- Multi-user collaboration or real-time updates.
 
-- New `package_completeness` factor uses real document presence + per-field confidence
-- If an offer is missing proof of funds / pre-approval, the score is shown as "incomplete" with a clear "request these documents" CTA
-- Prevents the agent from confidently citing a number that came from a thin packet
-
-## Database changes
-
-- Add `net_proceeds_inputs` jsonb column to `deal_analyses` (commission_pct, payoff_amount, transfer_tax_pct, other_costs)
-- Add `comps` jsonb column to `deal_analyses` (array of {address, price, sqft, sold_date, distance_mi, notes})
-- Add `recommendation` jsonb column to `deal_analyses` (computed_at, recommended_offer_id, weighted_scores, rationale)
-- No new tables needed — `extracted_offer_fields` already supports per-field confidence + evidence
-
-## Files to create / modify
-
-**Backend**
-- Rewrite `supabase/functions/extract-offer/index.ts` — real extraction with PDF parsing + Lovable AI tool calling
-- New `supabase/functions/recommend-offer/index.ts` — weighted scoring + AI rationale
-- New `supabase/functions/market-context/index.ts` — comp-band blurb generation
-
-**Engines**
-- `src/lib/scoringEngine.ts` — attach `source` evidence to every factor
-- `src/lib/recommendationEngine.ts` — wire seller-priority weighting + net-proceeds
-- New `src/lib/netProceeds.ts` — pure calculator
-- New `src/lib/compsAnalysis.ts` — price-per-sqft band math
-
-**UI**
-- `src/pages/Comparison.tsx` — recommendation banner, net-proceeds column, live priority sliders
-- `src/pages/RiskScoring.tsx` — click-to-expand factor evidence with document quotes
-- `src/pages/SellerPriorities.tsx` — make sliders actually re-rank in real time
-- New `src/pages/Present.tsx` + route — full-screen seller-presentation mode
-- New `src/components/EvidencePopover.tsx` — reusable "where did this number come from" popover
-- New `src/components/NetProceedsEditor.tsx` — commission/payoff/tax inputs
-- New `src/components/CompsEditor.tsx` — paste-in comp sales
-
-## Sequencing
-
-The order matters because each stage unblocks the next:
-
-```text
-Phase 1  Real extraction          (everything else depends on real numbers)
-Phase 2  Evidence in scoring UI    (turns numbers into trust)
-Phase 3  Net proceeds              (the agent's #1 missing feature)
-Phase 4  Weighted recommendation   (the "which one?" answer)
-Phase 5  Comps + market context    (defensibility)
-Phase 6  Presentation mode         (the magic moment)
-```
-
-I'd suggest we do **Phase 1 + Phase 2 first as one shippable chunk** — that alone takes the product from "demo with fake data" to "actually trustworthy." Then we decide together what to tackle next based on how it feels.
-
-## Success criteria
-
-- Upload a real purchase agreement PDF → see actual extracted price, contingencies, and dates with quoted evidence
-- Click any score factor → see the literal sentence from the document that drove it
-- Open Comparison → see a clear recommended offer with a plain-English rationale tied to the seller's priorities
-- See **net proceeds**, not just offer price, side-by-side
-- Hit "Present" → enter a clean, large-format mode you'd actually project for a seller meeting
-- Low-confidence extractions are flagged, not hidden — the agent always knows what to double-check
-
-## Open question for you
-
-This plan is big. I recommend **shipping Phase 1 + 2 first** (real extraction + evidence-backed scoring) because without those, everything else is decoration on top of fake data. Want me to scope this first PR to just those two phases, or push through all six?
+Approve this and I'll implement, then you upload an offer and we'll verify it end-to-end.
