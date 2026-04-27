@@ -257,6 +257,55 @@ export default function Comparison() {
             </div>
           </div>
 
+          {/* Negotiation history row — only shows when at least one offer has counters */}
+          {sorted.some(o => (o.counters?.length ?? 0) > 1) && (
+            <div className="card-elevated overflow-x-auto mb-px">
+              <div className="flex">
+                <div className="w-36 flex-shrink-0 p-4 flex items-start">
+                  <span className="text-[10px] tracking-[0.1em] uppercase text-muted-foreground font-body font-medium">Negotiation</span>
+                </div>
+                {sorted.map((o) => {
+                  const chain = o.counters ?? [];
+                  if (chain.length <= 1) {
+                    return (
+                      <div key={o.id} className="flex-1 min-w-[160px] p-4 border-l border-border/40">
+                        <p className="text-[11px] text-muted-foreground font-body">No counters</p>
+                      </div>
+                    );
+                  }
+                  const statusLabel =
+                    o.counterStatus === 'seller_countered' ? 'Awaiting buyer response' :
+                    o.counterStatus === 'buyer_countered' ? 'Awaiting your response' :
+                    o.counterStatus === 'accepted' ? 'Accepted' : 'Active negotiation';
+                  return (
+                    <div key={o.id} className="flex-1 min-w-[160px] p-4 border-l border-border/40 space-y-2">
+                      {chain.map((c, i) => (
+                        <div key={i} className="text-[11px] font-body">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-muted-foreground capitalize">
+                              {c.label || (c.party === 'seller' ? `Seller counter #${i}` : i === 0 ? 'Buyer offer' : `Buyer counter #${i}`)}
+                            </span>
+                            {typeof c.price === 'number' && (
+                              <span className="text-foreground font-medium">{formatCurrency(c.price)}</span>
+                            )}
+                          </div>
+                          {c.key_changes?.length > 0 && (
+                            <ul className="mt-0.5 ml-2 list-disc list-inside text-muted-foreground/80">
+                              {c.key_changes.slice(0, 3).map((k, j) => <li key={j}>{k}</li>)}
+                            </ul>
+                          )}
+                        </div>
+                      ))}
+                      <p className="text-[10px] uppercase tracking-wider text-accent font-body font-medium pt-1 border-t border-border/40">
+                        {statusLabel}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Financing Row */}
           <div className="card-elevated overflow-x-auto mb-px">
             <div className="flex">
