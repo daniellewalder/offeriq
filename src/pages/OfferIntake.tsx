@@ -20,6 +20,8 @@ import {
 
 const DOC_CATEGORIES = [
   'Purchase Agreement',
+  'Seller Counter',
+  'Buyer Counter',
   'Proof of Funds',
   'Pre-Approval',
   'Proof of Income',
