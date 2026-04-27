@@ -1,22 +1,26 @@
 import AppLayout from '@/components/AppLayout';
-import { formatCurrency } from '@/data/sampleData';
 import {
-  CheckCircle, AlertCircle, Clock, FileText, Upload,
-  Plus, Shield, Eye, AlertTriangle, Sparkles, X, Info, Loader2, ArrowRight
+  CheckCircle, AlertCircle, FileText, Upload, Plus, X, Sparkles,
+  Loader2, ArrowRight, Wand2, Trash2, Folder,
 } from 'lucide-react';
-import { useState, useCallback, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  resolveActiveAnalysisId,
-  touchDealAnalysis,
   createOffer,
   uploadDocument,
   triggerExtraction,
+  touchDealAnalysis,
 } from '@/lib/offerService';
+import {
+  resolveActiveAnalysisId,
+  fetchAnalysisById,
+  fetchAnalysisSummariesForUser,
+  setStoredActiveAnalysisId,
+} from '@/lib/activeAnalysis';
 
-// --------------- types ---------------
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 const DOC_CATEGORIES = [
   'Purchase Agreement',
@@ -29,666 +33,681 @@ const DOC_CATEGORIES = [
   'Disclosures',
   'Other',
 ] as const;
-
 type DocCategory = typeof DOC_CATEGORIES[number];
 
-interface UploadedDoc {
+interface StagedFile {
   id: string;
   file: File;
   category: DocCategory;
-  status: 'queued' | 'uploading' | 'stored' | 'extracting' | 'complete' | 'error';
-  progress: number;
-  dbDocId?: string;
-  errorMessage?: string;
+  // Which package this file is currently assigned to. `null` = unassigned (sitting in the staging tray).
+  packageId: string | null;
 }
 
-interface ExtractionField {
-  value: string | number | boolean | string[] | null;
-  confidence: number;
-  evidence: string | null;
-}
-
-interface ExtractionResult {
-  [key: string]: ExtractionField;
-}
-
-interface OfferPackage {
+interface StagedPackage {
   id: string;
   name: string;
-  documents: UploadedDoc[];
-  extraction: ExtractionResult | null;
-  status: 'uploading' | 'extracting' | 'complete' | 'idle';
-  dbOfferId?: string;
-  dbDealAnalysisId?: string;
-  dbExtractionResult?: any;
-  extractionError?: string;
+  // Per-package processing state during the batch run
+  status: 'idle' | 'uploading' | 'extracting' | 'complete' | 'error';
+  message?: string;
 }
 
-// --------------- helpers ---------------
+interface AnalysisSummary {
+  id: string;
+  label: string;
+  city: string | null;
+  listingPrice: number | null;
+}
 
-const confidenceColor = (c: number) => {
-  if (c >= 0.9) return 'text-success';
-  if (c >= 0.7) return 'text-warning';
-  if (c > 0) return 'text-destructive';
-  return 'text-muted-foreground';
-};
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const confidenceBg = (c: number) => {
-  if (c >= 0.9) return 'border-success/20 bg-success/5';
-  if (c >= 0.7) return 'border-warning/20 bg-warning/5';
-  if (c > 0) return 'border-destructive/20 bg-destructive/5';
-  return 'border-border bg-muted/30';
-};
+const newId = (p: string) =>
+  `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-const fieldLabel = (key: string) =>
-  key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+/**
+ * Heuristic auto-grouping: take the part of the filename before
+ * common delimiters (offer/purchase/counter/POF/etc.) and use it as
+ * the implied buyer. Files sharing that root land in the same package.
+ * This intentionally avoids a network call so it runs instantly.
+ */
+function inferBuyerKey(filename: string): string {
+  const stem = filename.replace(/\.[^./]+$/, '');
+  // Strip common doc-type tokens.
+  const stripped = stem
+    .replace(
+      /(purchase\s*agreement|offer|counter|pre[-\s]*approval|proof\s*of\s*funds|pof|disclosure[s]?|addendum|addenda|signed|final|draft|v\d+|\#\d+)/gi,
+      ' ',
+    )
+    .replace(/[_\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Use first 2-3 meaningful words as buyer key; lowercased for grouping.
+  const words = stripped.split(' ').filter(w => w.length > 1).slice(0, 3);
+  const key = words.join(' ').toLowerCase();
+  return key || stem.toLowerCase();
+}
 
-const formatValue = (v: ExtractionField['value']): string => {
-  if (v === null || v === undefined) return '—';
-  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
-  if (Array.isArray(v)) return v.join('; ');
-  if (typeof v === 'number' && v > 10000) return formatCurrency(v);
-  return String(v);
-};
+function inferCategory(filename: string): DocCategory {
+  const f = filename.toLowerCase();
+  if (f.includes('seller counter')) return 'Seller Counter';
+  if (f.includes('buyer counter')) return 'Buyer Counter';
+  if (f.includes('counter')) return 'Seller Counter';
+  if (f.includes('pof') || f.includes('proof of funds')) return 'Proof of Funds';
+  if (f.includes('pre-approval') || f.includes('preapproval') || f.includes('pre approval'))
+    return 'Pre-Approval';
+  if (f.includes('income')) return 'Proof of Income';
+  if (f.includes('addend')) return 'Addenda';
+  if (f.includes('disclosure')) return 'Disclosures';
+  return 'Purchase Agreement';
+}
 
-// Field groupings for display
-const FIELD_GROUPS: { title: string; icon: typeof Shield; fields: string[] }[] = [
-  {
-    title: 'Core Terms',
-    icon: FileText,
-    fields: ['buyer_name', 'property_address', 'offer_price', 'financing_type', 'loan_amount', 'down_payment_amount', 'down_payment_percent', 'earnest_money_deposit'],
-  },
-  {
-    title: 'Timeline & Contingencies',
-    icon: Clock,
-    fields: ['close_of_escrow_days', 'requested_close_date', 'inspection_contingency_present', 'inspection_contingency_days', 'appraisal_contingency_present', 'appraisal_contingency_days', 'loan_contingency_present', 'loan_contingency_days'],
-  },
-  {
-    title: 'Terms & Requests',
-    icon: AlertTriangle,
-    fields: ['leaseback_requested', 'leaseback_days', 'seller_credit_requested', 'repairs_requested', 'occupancy_terms', 'special_requests'],
-  },
-  {
-    title: 'Documentation',
-    icon: Shield,
-    fields: ['proof_of_funds_present', 'proof_of_income_present', 'preapproval_present', 'lender_name', 'addenda_present', 'disclosure_acknowledgment_present'],
-  },
-];
+function titleCase(s: string) {
+  return s.replace(/\b\w/g, c => c.toUpperCase());
+}
 
-// --------------- component ---------------
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function OfferIntake() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // New upload state
-  const [packages, setPackages] = useState<OfferPackage[]>([]);
-  const [activePackageId, setActivePackageId] = useState<string | null>(null);
-  const [showNewUpload, setShowNewUpload] = useState(false);
-  const [newOfferName, setNewOfferName] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<DocCategory>('Purchase Agreement');
-  const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
+  // Active analysis context
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [analysisLabel, setAnalysisLabel] = useState<string>('');
+  const [analysisOptions, setAnalysisOptions] = useState<AnalysisSummary[]>([]);
+  const [needsPicker, setNeedsPicker] = useState(false);
+  const [bootLoading, setBootLoading] = useState(true);
 
-  const createPackage = () => {
-    if (!newOfferName.trim()) {
-      toast({ title: 'Enter an offer name', description: 'e.g. "Whitfield Trust" or "Buyer 6"', variant: 'destructive' });
-      return;
-    }
-    const pkg: OfferPackage = {
-      id: `pkg-${Date.now()}`,
-      name: newOfferName.trim(),
-      documents: [],
-      extraction: null,
-      status: 'idle',
-    };
-    setPackages(prev => [...prev, pkg]);
-    setActivePackageId(pkg.id);
-    setNewOfferName('');
-    setShowNewUpload(false);
+  // Staging state
+  const [files, setFiles] = useState<StagedFile[]>([]);
+  const [packages, setPackages] = useState<StagedPackage[]>([]);
+  const [dragOverPkg, setDragOverPkg] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
 
-    // Create offer in DB in background
+  // ── Boot: resolve analysis context ──
+  useEffect(() => {
+    let cancelled = false;
     (async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          toast({ title: 'Not signed in', description: 'Please sign in to upload documents.', variant: 'destructive' });
-          return;
-        }
-        const dealId = await resolveActiveAnalysisId(user.id);
-        const offerId = await createOffer(user.id, dealId, pkg.name);
-        setPackages(prev => prev.map(p =>
-          p.id === pkg.id ? { ...p, dbOfferId: offerId, dbDealAnalysisId: dealId } : p
-        ));
-      } catch (e: any) {
-        console.error('Failed to create offer in DB:', e);
-        toast({ title: 'Could not create offer', description: e?.message ?? 'Please try again.', variant: 'destructive' });
-      }
-    })();
-  };
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setBootLoading(false); return; }
 
-  const handleFiles = useCallback((files: FileList | null) => {
-    if (!files || !activePackageId) return;
-    const newDocs: UploadedDoc[] = Array.from(files).map(f => ({
-      id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      file: f,
-      category: selectedCategory,
-      status: 'uploading' as const,
-      progress: 0,
-    }));
-
-    setPackages(prev => prev.map(p =>
-      p.id === activePackageId ? { ...p, documents: [...p.documents, ...newDocs] } : p
-    ));
-
-    // Upload files — wait for offer to exist, then upload
-    const currentPkgId = activePackageId;
-    newDocs.forEach(doc => {
-      (async () => {
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) {
-            throw new Error('You must be signed in to upload documents.');
-          }
-
-          // Wait up to ~10s for the background offer creation to finish
-          let dbOfferId: string | undefined;
-          for (let i = 0; i < 50; i++) {
-            const latest = await new Promise<OfferPackage | undefined>(resolve => {
-              setPackages(prev => {
-                resolve(prev.find(p => p.id === currentPkgId));
-                return prev;
-              });
-            });
-            if (latest?.dbOfferId) { dbOfferId = latest.dbOfferId; break; }
-            await new Promise(r => setTimeout(r, 200));
-          }
-          if (!dbOfferId) {
-            throw new Error('Offer is still being created — please try again in a moment.');
-          }
-
-          setPackages(prev => prev.map(p =>
-            p.id === currentPkgId
-              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, progress: 30 } : d) }
-              : p
-          ));
-
-          const { documentId } = await uploadDocument(user.id, dbOfferId, doc.file, doc.category);
-
-          setPackages(prev => prev.map(p =>
-            p.id === currentPkgId
-              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'stored', progress: 100, dbDocId: documentId, errorMessage: undefined } : d) }
-              : p
-          ));
-        } catch (e: any) {
-          console.error('Upload failed:', e);
-          const errMsg = e?.message ?? 'Could not upload the document.';
-          setPackages(prev => prev.map(p =>
-            p.id === currentPkgId
-              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'error', progress: 0, errorMessage: errMsg } : d) }
-              : p
-          ));
+      const id = await resolveActiveAnalysisId(user.id, searchParams);
+      if (!id) {
+        // No analyses at all — push them to NewAnalysis instead.
+        if (!cancelled) {
+          setBootLoading(false);
           toast({
-            title: 'Upload failed',
-            description: errMsg,
-            variant: 'destructive',
+            title: 'Start a new analysis first',
+            description: 'Create a deal so we know which property these offers belong to.',
           });
+          navigate('/new-analysis');
         }
-      })();
+        return;
+      }
+
+      const summaries = await fetchAnalysisSummariesForUser(user.id);
+      if (cancelled) return;
+      setAnalysisOptions(
+        summaries.map(s => ({
+          id: s.id,
+          label: s.properties?.address || s.name,
+          city: s.properties?.city ?? null,
+          listingPrice: s.properties?.listing_price ?? null,
+        })),
+      );
+
+      // If no explicit ?analysis= was passed and there's >1 analysis,
+      // make the user confirm which deal they're uploading into.
+      const explicit = searchParams.get('analysis');
+      if (!explicit && summaries.length > 1) {
+        setNeedsPicker(true);
+        setBootLoading(false);
+        return;
+      }
+
+      const analysis = await fetchAnalysisById(user.id, id);
+      if (cancelled) return;
+      setAnalysisId(id);
+      setAnalysisLabel(
+        (analysis as any)?.properties?.address || (analysis as any)?.name || 'Active deal',
+      );
+      setStoredActiveAnalysisId(id);
+      setBootLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [searchParams, toast, navigate]);
+
+  const pickAnalysis = (id: string) => {
+    setStoredActiveAnalysisId(id);
+    const next = new URLSearchParams(searchParams);
+    next.set('analysis', id);
+    setSearchParams(next, { replace: true });
+    setNeedsPicker(false);
+  };
+
+  // ── Staging actions ──
+  const addFiles = (incoming: FileList | File[] | null) => {
+    if (!incoming) return;
+    const list = Array.from(incoming);
+    if (list.length === 0) return;
+    const staged: StagedFile[] = list.map(f => ({
+      id: newId('file'),
+      file: f,
+      category: inferCategory(f.name),
+      packageId: null,
+    }));
+    setFiles(prev => [...prev, ...staged]);
+  };
+
+  const removeFile = (id: string) => {
+    setFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const setFileCategory = (id: string, category: DocCategory) => {
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, category } : f));
+  };
+
+  const moveFileToPackage = (fileId: string, packageId: string | null) => {
+    setFiles(prev => prev.map(f => f.id === fileId ? { ...f, packageId } : f));
+  };
+
+  const addPackage = (name?: string) => {
+    const id = newId('pkg');
+    setPackages(prev => [
+      ...prev,
+      { id, name: name?.trim() || `Offer ${prev.length + 1}`, status: 'idle' },
+    ]);
+    return id;
+  };
+
+  const renamePackage = (id: string, name: string) => {
+    setPackages(prev => prev.map(p => p.id === id ? { ...p, name } : p));
+  };
+
+  const removePackage = (id: string) => {
+    setFiles(prev => prev.map(f => f.packageId === id ? { ...f, packageId: null } : f));
+    setPackages(prev => prev.filter(p => p.id !== id));
+  };
+
+  const autoGroup = () => {
+    if (files.length === 0) {
+      toast({ title: 'Add some files first', description: 'Drop PDFs into the tray, then auto-group.' });
+      return;
+    }
+    // Group unassigned files by inferred buyer key.
+    const groups = new Map<string, StagedFile[]>();
+    for (const f of files) {
+      if (f.packageId !== null) continue;
+      const key = inferBuyerKey(f.file.name);
+      const arr = groups.get(key) ?? [];
+      arr.push(f);
+      groups.set(key, arr);
+    }
+    if (groups.size === 0) {
+      toast({ title: 'Nothing to group', description: 'All files are already assigned to a package.' });
+      return;
+    }
+
+    const newPackages: StagedPackage[] = [];
+    const fileUpdates = new Map<string, string>(); // fileId -> packageId
+    let i = packages.length;
+    for (const [key, group] of groups.entries()) {
+      i += 1;
+      const pkg: StagedPackage = {
+        id: newId('pkg'),
+        name: titleCase(key) || `Offer ${i}`,
+        status: 'idle',
+      };
+      newPackages.push(pkg);
+      for (const f of group) fileUpdates.set(f.id, pkg.id);
+    }
+
+    setPackages(prev => [...prev, ...newPackages]);
+    setFiles(prev => prev.map(f => fileUpdates.has(f.id) ? { ...f, packageId: fileUpdates.get(f.id)! } : f));
+    toast({
+      title: `Created ${newPackages.length} package${newPackages.length === 1 ? '' : 's'}`,
+      description: 'Drag files between packages to fix any misgroupings.',
     });
-  }, [activePackageId, selectedCategory, toast]);
-  const removeDoc = (pkgId: string, docId: string) => {
-    setPackages(prev => prev.map(p =>
-      p.id === pkgId ? { ...p, documents: p.documents.filter(d => d.id !== docId) } : p
-    ));
   };
 
-  const runExtraction = async (pkgId: string) => {
-    const pkg = packages.find(p => p.id === pkgId);
-    if (!pkg) return;
+  // ── Drag & drop between packages ──
+  const onDragStartFile = (e: React.DragEvent, fileId: string) => {
+    e.dataTransfer.setData('text/x-file-id', fileId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  const onDropPackage = (e: React.DragEvent, packageId: string | null) => {
+    e.preventDefault();
+    setDragOverPkg(null);
+    const fileId = e.dataTransfer.getData('text/x-file-id');
+    if (fileId) moveFileToPackage(fileId, packageId);
+  };
+  const allowDrop = (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
 
-    if (!pkg.dbOfferId) {
+  // ── Process all packages ──
+  const processAll = async () => {
+    if (!analysisId) return;
+    const ready = packages.filter(p => filesFor(p.id).length > 0);
+    if (ready.length === 0) {
       toast({
-        title: 'Offer not ready',
-        description: 'Wait a moment for the offer record to finish creating, then try again.',
+        title: 'Nothing to process',
+        description: 'Create a package and assign at least one file.',
         variant: 'destructive',
       });
       return;
     }
-    const unstored = pkg.documents.filter(d => d.status !== 'stored' && d.status !== 'complete');
-    if (unstored.length > 0) {
-      toast({
-        title: 'Documents still uploading',
-        description: 'Wait for all documents to finish uploading before extracting.',
-        variant: 'destructive',
-      });
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      toast({ title: 'Not signed in', variant: 'destructive' });
       return;
     }
 
-    setPackages(prev => prev.map(p =>
-      p.id === pkgId ? { ...p, status: 'extracting', extractionError: undefined, documents: p.documents.map(d => ({ ...d, status: 'extracting' as const })) } : p
-    ));
-
-    try {
-      const docPayload = pkg.documents.map(d => ({
-        id: d.dbDocId || d.id,
-        name: d.file.name,
-        category: d.category,
-      }));
-
-      const result = await triggerExtraction(pkg.dbOfferId, pkg.name, docPayload);
-
-      const extraction: ExtractionResult = {};
-      if (result.extraction) {
-        for (const field of result.extraction) {
-          extraction[field.field_name] = {
-            value: field.field_value,
-            confidence: field.confidence,
-            evidence: field.evidence,
-          };
+    setRunning(true);
+    let okCount = 0;
+    for (const pkg of ready) {
+      setPackages(prev => prev.map(p =>
+        p.id === pkg.id ? { ...p, status: 'uploading', message: undefined } : p,
+      ));
+      try {
+        const offerId = await createOffer(user.id, analysisId, pkg.name);
+        const myFiles = filesFor(pkg.id);
+        const docPayload: { id: string; name: string; category: string }[] = [];
+        for (const sf of myFiles) {
+          const { documentId } = await uploadDocument(user.id, offerId, sf.file, sf.category);
+          docPayload.push({ id: documentId, name: sf.file.name, category: sf.category });
         }
+        setPackages(prev => prev.map(p =>
+          p.id === pkg.id ? { ...p, status: 'extracting' } : p,
+        ));
+        await triggerExtraction(offerId, pkg.name, docPayload);
+        setPackages(prev => prev.map(p =>
+          p.id === pkg.id ? { ...p, status: 'complete' } : p,
+        ));
+        okCount += 1;
+      } catch (e: any) {
+        const msg = e?.message ?? 'Failed';
+        console.error('Package failed:', pkg.name, e);
+        setPackages(prev => prev.map(p =>
+          p.id === pkg.id ? { ...p, status: 'error', message: msg } : p,
+        ));
       }
+    }
 
-      setPackages(prev => prev.map(p =>
-        p.id === pkgId
-          ? {
-              ...p,
-              status: 'complete',
-              extraction,
-              dbExtractionResult: result,
-              documents: p.documents.map(d => ({ ...d, status: 'complete' as const })),
-            }
-          : p
-      ));
+    try { await touchDealAnalysis(analysisId); } catch { /* ignore */ }
+    setRunning(false);
+
+    if (okCount > 0) {
       toast({
-        title: 'Extraction complete',
-        description: `${result.fields_count ?? Object.keys(extraction).length} fields extracted (v${result.version ?? 1}). Opening comparison…`,
+        title: `Processed ${okCount} offer${okCount === 1 ? '' : 's'}`,
+        description: 'Opening comparison…',
       });
-
-      // Make sure Comparison's "latest analysis" picks the one this offer belongs to
-      if (pkg.dbDealAnalysisId) {
-        try { await touchDealAnalysis(pkg.dbDealAnalysisId); } catch {}
-      }
-
-      // Navigate so the agent sees their real offer alongside the rest
-      setTimeout(() => navigate('/comparison'), 1200);
-    } catch (e: any) {
-      const msg = e?.message ?? 'Extraction failed. Check that your PDFs contain selectable text.';
-      console.error('Extraction failed:', e);
-      setPackages(prev => prev.map(p =>
-        p.id === pkgId
-          ? {
-              ...p,
-              status: 'idle',
-              extractionError: msg,
-              documents: p.documents.map(d => ({ ...d, status: d.dbDocId ? 'stored' as const : d.status })),
-            }
-          : p
-      ));
-      toast({ title: 'Extraction failed', description: msg, variant: 'destructive' });
+      setTimeout(() => navigate(`/comparison?analysis=${analysisId}`), 900);
+    } else {
+      toast({
+        title: 'No packages processed',
+        description: 'Check the errors and try again.',
+        variant: 'destructive',
+      });
     }
   };
 
-  const activePkg = packages.find(p => p.id === activePackageId);
+  // Helpers
+  const filesFor = (pkgId: string | null) => files.filter(f => f.packageId === pkgId);
+  const unassigned = useMemo(() => filesFor(null), [files]);
+  const totalFiles = files.length;
+  const assignedFiles = files.filter(f => f.packageId !== null).length;
 
-  // Compute summary stats for extraction
-  const getExtractionStats = (ext: ExtractionResult) => {
-    const fields = Object.values(ext);
-    const found = fields.filter(f => f.value !== null).length;
-    const highConf = fields.filter(f => f.confidence >= 0.9).length;
-    const lowConf = fields.filter(f => f.confidence > 0 && f.confidence < 0.7).length;
-    const avgConf = fields.filter(f => f.confidence > 0).reduce((s, f) => s + f.confidence, 0) / (fields.filter(f => f.confidence > 0).length || 1);
-    return { total: fields.length, found, highConf, lowConf, avgConf };
-  };
+  // ── Render ──
+  if (bootLoading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center py-24 text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin mr-2" />
+          <span className="text-[13px] font-body">Loading…</span>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (needsPicker) {
+    return (
+      <AppLayout>
+        <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+          <div>
+            <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Intake</p>
+            <h1 className="heading-display text-3xl text-foreground">Which deal are these offers for?</h1>
+            <p className="text-[13px] text-muted-foreground font-body mt-2">
+              Pick the listing these offer packages belong to. You can change this later from the Dashboard.
+            </p>
+          </div>
+          <div className="card-elevated p-3 space-y-1">
+            {analysisOptions.map(o => (
+              <button
+                key={o.id}
+                onClick={() => pickAnalysis(o.id)}
+                className="w-full text-left flex items-center justify-between gap-4 px-4 py-3 rounded-md hover:bg-muted/40 transition-colors"
+              >
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-foreground font-body truncate">{o.label}</p>
+                  <p className="text-[11px] text-muted-foreground font-body truncate">
+                    {o.city ?? 'No city set'}
+                    {o.listingPrice ? ` · $${o.listingPrice.toLocaleString()}` : ''}
+                  </p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
+              </button>
+            ))}
+          </div>
+          <div className="text-[12px] text-muted-foreground font-body">
+            Need a new listing?{' '}
+            <Link to="/new-analysis" className="text-accent hover:underline">Start a new analysis</Link>.
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
         {/* Header */}
-        <div className="flex items-end justify-between">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
             <p className="text-[11px] tracking-[0.15em] uppercase text-muted-foreground font-body mb-3">Intake</p>
-            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Offer Extraction</h1>
+            <h1 className="heading-display text-3xl lg:text-4xl text-foreground">Upload Offer Packages</h1>
             <p className="text-[13px] text-muted-foreground font-body mt-2">
-              Upload offer packages. AI extracts and scores every deal term automatically.
+              Drop every offer PDF in the tray. Auto-group by buyer, fix the groupings, then process all of them in one go.
             </p>
           </div>
-          <Link
-            to="/comparison"
-            className="inline-flex items-center gap-1.5 text-[12px] font-body font-medium px-3 py-2 rounded-sm border border-border/60 text-muted-foreground hover:text-foreground hover:border-accent/40 transition-colors"
-          >
-            View comparison <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.5} />
-          </Link>
-        </div>
-
-        {/* ========= UPLOAD ========= */}
-          <div className="space-y-6">
-            {/* Offer package list */}
-            <div className="flex gap-3 flex-wrap items-center">
-              {packages.map(pkg => (
+          <div className="flex flex-col items-end gap-1">
+            <div className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body">Uploading into</div>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-body font-medium text-foreground">{analysisLabel}</span>
+              {analysisOptions.length > 1 && (
                 <button
-                  key={pkg.id}
-                  onClick={() => setActivePackageId(pkg.id)}
-                  className={`px-4 py-2 rounded-lg border text-sm font-body font-medium transition-all ${
-                    activePackageId === pkg.id
-                      ? 'border-accent bg-accent/10 text-foreground'
-                      : 'border-border bg-card text-muted-foreground hover:text-foreground hover:border-accent/40'
-                  }`}
+                  onClick={() => setNeedsPicker(true)}
+                  className="text-[11px] text-muted-foreground hover:text-accent transition-colors font-body underline-offset-4 hover:underline"
                 >
-                  <span>{pkg.name}</span>
-                  {pkg.status === 'complete' && <CheckCircle className="w-3.5 h-3.5 inline ml-2 text-success" />}
-                  {pkg.status === 'extracting' && <Sparkles className="w-3.5 h-3.5 inline ml-2 text-accent animate-pulse" />}
-                  <span className="ml-2 text-xs text-muted-foreground">{pkg.documents.length} docs</span>
+                  change
                 </button>
-              ))}
-
-              {!showNewUpload ? (
-                <button
-                  onClick={() => setShowNewUpload(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-dashed border-border text-sm font-body text-muted-foreground hover:text-foreground hover:border-accent/40 transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  New Offer Package
-                </button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={newOfferName}
-                    onChange={e => setNewOfferName(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && createPackage()}
-                    placeholder="Buyer name or label…"
-                    className="px-3 py-2 rounded-lg border border-border bg-card text-sm font-body placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                    autoFocus
-                  />
-                  <button onClick={createPackage} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-body font-medium hover:opacity-90 transition-opacity">
-                    Create
-                  </button>
-                  <button onClick={() => setShowNewUpload(false)} className="p-2 text-muted-foreground hover:text-foreground">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
               )}
             </div>
-
-            {/* Active package detail */}
-            {activePkg ? (
-              <div className="space-y-6">
-                {/* Upload zone */}
-                <div className="card-elevated p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold font-body">{activePkg.name}</h3>
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={selectedCategory}
-                        onChange={e => setSelectedCategory(e.target.value as DocCategory)}
-                        className="px-3 py-1.5 rounded-lg border border-border bg-card text-xs font-body focus:outline-none focus:ring-1 focus:ring-accent"
-                      >
-                        {DOC_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Drop zone */}
-                  <div
-                    className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-accent/40 transition-colors cursor-pointer group"
-                    onClick={() => fileInputRef.current?.click()}
-                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
-                    onDrop={e => { e.preventDefault(); e.stopPropagation(); handleFiles(e.dataTransfer.files); }}
-                  >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
-                      className="hidden"
-                      onChange={e => handleFiles(e.target.files)}
-                    />
-                    <Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground group-hover:text-accent transition-colors" />
-                    <p className="text-sm font-body text-muted-foreground">
-                      Drop PDF or DOCX files here, or <span className="text-accent font-medium">browse</span>
-                    </p>
-                    <p className="text-xs font-body text-muted-foreground/60 mt-1">
-                      Category: {selectedCategory}
-                    </p>
-                  </div>
-
-                  {/* Uploaded docs list */}
-                  {activePkg.documents.length > 0 && (
-                    <div className="mt-4 space-y-2">
-                      {activePkg.documents.map(doc => (
-                        <div key={doc.id} className={`flex items-start gap-3 p-3 border rounded-lg ${doc.status === 'error' ? 'border-destructive/40 bg-destructive/5' : 'border-border'}`}>
-                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-body truncate">{doc.file.name}</p>
-                            <p className="text-xs text-muted-foreground font-body">
-                              {doc.category}
-                              {' · '}
-                              <span className={
-                                doc.status === 'error' ? 'text-destructive' :
-                                doc.status === 'complete' ? 'text-success' :
-                                doc.status === 'stored' ? 'text-success' :
-                                doc.status === 'extracting' ? 'text-accent' :
-                                'text-muted-foreground'
-                              }>
-                                {doc.status === 'queued' && 'Queued'}
-                                {doc.status === 'uploading' && 'Uploading'}
-                                {doc.status === 'stored' && 'Stored ✓'}
-                                {doc.status === 'extracting' && 'Extracting…'}
-                                {doc.status === 'complete' && 'Done ✓'}
-                                {doc.status === 'error' && 'Error'}
-                              </span>
-                            </p>
-                            {doc.errorMessage && (
-                              <p className="text-[11px] text-destructive font-body mt-1">{doc.errorMessage}</p>
-                            )}
-                          </div>
-                          {doc.status === 'uploading' && (
-                            <div className="flex items-center gap-2">
-                              <div className="w-20 h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${doc.progress}%` }} />
-                              </div>
-                              <span className="text-xs text-muted-foreground font-body">{doc.progress}%</span>
-                            </div>
-                          )}
-                          {doc.status === 'stored' && <CheckCircle className="w-4 h-4 text-success" />}
-                          {doc.status === 'extracting' && <Sparkles className="w-4 h-4 text-accent animate-pulse" />}
-                          {doc.status === 'complete' && <CheckCircle className="w-4 h-4 text-success" />}
-                          {doc.status === 'error' && <AlertCircle className="w-4 h-4 text-destructive" />}
-                          <button onClick={() => removeDoc(activePkg.id, doc.id)} className="p-1 text-muted-foreground hover:text-destructive transition-colors">
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Package-level extraction error */}
-                  {activePkg.extractionError && (
-                    <div className="mt-4 p-3 rounded-lg border border-destructive/30 bg-destructive/5 text-[12px] font-body text-destructive">
-                      <span className="font-medium">Extraction error: </span>{activePkg.extractionError}
-                    </div>
-                  )}
-
-                  {/* Extract button */}
-                  {activePkg.documents.length > 0 && activePkg.status !== 'complete' && (
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        onClick={() => runExtraction(activePkg.id)}
-                        disabled={activePkg.status === 'extracting' || activePkg.documents.some(d => d.status === 'uploading')}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-body font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {activePkg.status === 'extracting' ? (
-                          <>
-                            <Sparkles className="w-4 h-4 animate-pulse" />
-                            Extracting…
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-4 h-4" />
-                            Run AI Extraction
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Extraction Results */}
-                {activePkg.extraction && (
-                  <div className="space-y-6">
-                    {/* Summary bar */}
-                    {(() => {
-                      const stats = getExtractionStats(activePkg.extraction!);
-                      return (
-                        <div className="card-elevated p-5">
-                          <div className="flex items-center gap-3 mb-4">
-                            <Sparkles className="w-5 h-5 text-accent" />
-                            <h3 className="text-base font-semibold font-body">Extraction Summary</h3>
-                          </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                            <div>
-                              <p className="text-xs text-muted-foreground font-body">Fields Found</p>
-                              <p className="text-2xl font-semibold font-display">{stats.found}<span className="text-sm text-muted-foreground font-body">/{stats.total}</span></p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground font-body">High Confidence</p>
-                              <p className="text-2xl font-semibold font-display text-success">{stats.highConf}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground font-body">Needs Review</p>
-                              <p className="text-2xl font-semibold font-display text-warning">{stats.lowConf}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground font-body">Avg. Confidence</p>
-                              <p className="text-2xl font-semibold font-display">{Math.round(stats.avgConf * 100)}%</p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Notable items */}
-                    {(() => {
-                      const ext = activePkg.extraction!;
-                      const risks = ext.notable_risks?.value as string[] | null;
-                      const strengths = ext.notable_strengths?.value as string[] | null;
-                      const missing = ext.missing_items?.value as string[] | null;
-                      if (!risks?.length && !strengths?.length && !missing?.length) return null;
-                      return (
-                        <div className="grid sm:grid-cols-3 gap-4">
-                          {strengths && strengths.length > 0 && (
-                            <div className="p-4 rounded-lg border border-success/20 bg-success/5">
-                              <div className="flex items-center gap-2 mb-2">
-                                <Shield className="w-4 h-4 text-success" />
-                                <h4 className="text-xs font-semibold font-body uppercase tracking-wider text-success">Strengths</h4>
-                              </div>
-                              <ul className="space-y-1.5">
-                                {strengths.map((s, i) => (
-                                  <li key={i} className="text-xs font-body text-foreground leading-relaxed">{s}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {risks && risks.length > 0 && (
-                            <div className="p-4 rounded-lg border border-warning/20 bg-warning/5">
-                              <div className="flex items-center gap-2 mb-2">
-                                <AlertTriangle className="w-4 h-4 text-warning" />
-                                <h4 className="text-xs font-semibold font-body uppercase tracking-wider text-warning">Risks</h4>
-                              </div>
-                              <ul className="space-y-1.5">
-                                {risks.map((r, i) => (
-                                  <li key={i} className="text-xs font-body text-foreground leading-relaxed">{r}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {missing && missing.length > 0 && (
-                            <div className="p-4 rounded-lg border border-destructive/20 bg-destructive/5">
-                              <div className="flex items-center gap-2 mb-2">
-                                <AlertCircle className="w-4 h-4 text-destructive" />
-                                <h4 className="text-xs font-semibold font-body uppercase tracking-wider text-destructive">Missing</h4>
-                              </div>
-                              <ul className="space-y-1.5">
-                                {missing.map((m, i) => (
-                                  <li key={i} className="text-xs font-body text-foreground leading-relaxed">{m}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Field groups */}
-                    {FIELD_GROUPS.map(group => {
-                      const Icon = group.icon;
-                      return (
-                        <div key={group.title} className="card-elevated p-5">
-                          <div className="flex items-center gap-2 mb-4">
-                            <Icon className="w-4 h-4 text-muted-foreground" />
-                            <h4 className="text-xs font-semibold font-body uppercase tracking-wider text-muted-foreground">{group.title}</h4>
-                          </div>
-                          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {group.fields.map(key => {
-                              const field = activePkg.extraction![key];
-                              if (!field) return null;
-                              const isExpEv = expandedEvidence === key;
-                              return (
-                                <div key={key} className={`p-3 rounded-lg border transition-all ${confidenceBg(field.confidence)}`}>
-                                  <div className="flex items-center justify-between mb-1">
-                                    <span className="text-xs text-muted-foreground font-body">{fieldLabel(key)}</span>
-                                    <div className="flex items-center gap-1.5">
-                                      <span className={`text-xs font-medium font-body ${confidenceColor(field.confidence)}`}>
-                                        {field.confidence > 0 ? `${Math.round(field.confidence * 100)}%` : '—'}
-                                      </span>
-                                      {field.evidence && (
-                                        <button
-                                          onClick={() => setExpandedEvidence(isExpEv ? null : key)}
-                                          className="p-0.5 text-muted-foreground hover:text-accent transition-colors"
-                                          title="View evidence"
-                                        >
-                                          <Eye className="w-3 h-3" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <p className="text-sm font-medium font-body">{formatValue(field.value)}</p>
-                                  {isExpEv && field.evidence && (
-                                    <div className="mt-2 p-2 bg-muted/50 rounded text-xs font-body text-muted-foreground italic leading-relaxed">
-                                      <Info className="w-3 h-3 inline mr-1 -mt-0.5" />
-                                      "{field.evidence}"
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* Empty state */
-              <div className="card-elevated p-12 text-center">
-                <Upload className="w-10 h-10 mx-auto mb-4 text-muted-foreground/40" />
-                <h3 className="text-lg font-semibold font-body mb-1">No offer packages yet</h3>
-                <p className="text-sm text-muted-foreground font-body mb-4">
-                  Create an offer package to start uploading documents and extracting deal terms.
-                </p>
-                <button
-                  onClick={() => setShowNewUpload(true)}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-body font-medium hover:opacity-90 transition-opacity"
-                >
-                  <Plus className="w-4 h-4" />
-                  Create First Package
-                </button>
-              </div>
-            )}
           </div>
+        </div>
+
+        {/* Drop zone */}
+        <div
+          className="card-elevated p-6"
+          onDragOver={allowDrop}
+          onDrop={e => { e.preventDefault(); addFiles(e.dataTransfer.files); }}
+        >
+          <div
+            className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-accent/40 transition-colors cursor-pointer group"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
+              className="hidden"
+              onChange={e => { addFiles(e.target.files); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+            />
+            <Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground group-hover:text-accent transition-colors" />
+            <p className="text-sm font-body text-muted-foreground">
+              Drop all your offer PDFs here, or <span className="text-accent font-medium">browse</span>
+            </p>
+            <p className="text-xs font-body text-muted-foreground/60 mt-1">
+              {totalFiles > 0
+                ? `${totalFiles} file${totalFiles === 1 ? '' : 's'} staged · ${assignedFiles} assigned`
+                : 'You can add files from multiple buyers in one shot'}
+            </p>
+          </div>
+
+          {/* Toolbar */}
+          <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={autoGroup}
+                disabled={unassigned.length === 0 || running}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-border text-[12px] font-body font-medium text-foreground hover:border-accent/40 hover:bg-accent/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Wand2 className="w-3.5 h-3.5" /> Auto-group by buyer
+              </button>
+              <button
+                onClick={() => addPackage()}
+                disabled={running}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-dashed border-border text-[12px] font-body text-muted-foreground hover:text-foreground hover:border-accent/40 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> New empty package
+              </button>
+            </div>
+            <button
+              onClick={processAll}
+              disabled={running || packages.every(p => filesFor(p.id).length === 0)}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-body font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {running ? (
+                <><Sparkles className="w-4 h-4 animate-pulse" /> Processing…</>
+              ) : (
+                <><Sparkles className="w-4 h-4" /> Process all packages</>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Unassigned tray */}
+        <PackageBin
+          title={`Unassigned files (${unassigned.length})`}
+          subtitle="Drag files into a package, or click Auto-group."
+          tone="muted"
+          isOver={dragOverPkg === '__unassigned__'}
+          onDragEnter={() => setDragOverPkg('__unassigned__')}
+          onDragLeave={() => setDragOverPkg(null)}
+          onDrop={e => onDropPackage(e, null)}
+          onDragOver={allowDrop}
+        >
+          {unassigned.length === 0 ? (
+            <p className="text-[12px] text-muted-foreground font-body italic px-2 py-3">
+              No unassigned files. Add more above or rearrange your packages.
+            </p>
+          ) : (
+            unassigned.map(f => (
+              <FileChip
+                key={f.id}
+                file={f}
+                onCategoryChange={c => setFileCategory(f.id, c)}
+                onRemove={() => removeFile(f.id)}
+                onDragStart={e => onDragStartFile(e, f.id)}
+                disabled={running}
+              />
+            ))
+          )}
+        </PackageBin>
+
+        {/* Packages */}
+        {packages.length === 0 ? (
+          <div className="card-elevated p-8 text-center">
+            <Folder className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" strokeWidth={1.5} />
+            <p className="text-[13px] font-body text-foreground mb-1">No offer packages yet</p>
+            <p className="text-[12px] text-muted-foreground font-body">
+              Drop files above and click <span className="text-foreground font-medium">Auto-group by buyer</span>, or create a package manually.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {packages.map(pkg => {
+              const pkgFiles = filesFor(pkg.id);
+              return (
+                <PackageBin
+                  key={pkg.id}
+                  title={
+                    <input
+                      value={pkg.name}
+                      onChange={e => renamePackage(pkg.id, e.target.value)}
+                      disabled={running}
+                      className="bg-transparent border-none outline-none text-[13px] font-body font-medium text-foreground w-full"
+                    />
+                  }
+                  subtitle={`${pkgFiles.length} file${pkgFiles.length === 1 ? '' : 's'}`}
+                  status={pkg.status}
+                  statusMessage={pkg.message}
+                  onRemove={running ? undefined : () => removePackage(pkg.id)}
+                  isOver={dragOverPkg === pkg.id}
+                  onDragEnter={() => setDragOverPkg(pkg.id)}
+                  onDragLeave={() => setDragOverPkg(null)}
+                  onDrop={e => onDropPackage(e, pkg.id)}
+                  onDragOver={allowDrop}
+                >
+                  {pkgFiles.length === 0 ? (
+                    <p className="text-[12px] text-muted-foreground font-body italic px-2 py-3">
+                      Drag files here, or auto-group will fill it.
+                    </p>
+                  ) : (
+                    pkgFiles.map(f => (
+                      <FileChip
+                        key={f.id}
+                        file={f}
+                        onCategoryChange={c => setFileCategory(f.id, c)}
+                        onRemove={() => removeFile(f.id)}
+                        onDragStart={e => onDragStartFile(e, f.id)}
+                        disabled={running}
+                      />
+                    ))
+                  )}
+                </PackageBin>
+              );
+            })}
+          </div>
+        )}
       </div>
     </AppLayout>
+  );
+}
+
+// ─── Subcomponents ───────────────────────────────────────────────────────────
+
+interface PackageBinProps {
+  title: React.ReactNode;
+  subtitle?: string;
+  status?: StagedPackage['status'];
+  statusMessage?: string;
+  tone?: 'card' | 'muted';
+  isOver?: boolean;
+  onRemove?: () => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragEnter?: () => void;
+  onDragLeave?: () => void;
+  children?: React.ReactNode;
+}
+
+function PackageBin({
+  title, subtitle, status, statusMessage, tone = 'card',
+  isOver, onRemove, onDragOver, onDrop, onDragEnter, onDragLeave, children,
+}: PackageBinProps) {
+  return (
+    <div
+      className={`rounded-lg border transition-colors p-4 ${
+        tone === 'muted' ? 'bg-muted/20 border-border/50' : 'bg-card border-border'
+      } ${isOver ? 'border-accent ring-1 ring-accent/40' : ''}`}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+    >
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <div className="min-w-0 flex-1 flex items-center gap-2">
+          <Folder className="w-4 h-4 text-muted-foreground flex-shrink-0" strokeWidth={1.5} />
+          <div className="min-w-0 flex-1">{typeof title === 'string'
+            ? <p className="text-[13px] font-body font-medium text-foreground truncate">{title}</p>
+            : title}
+            {subtitle && <p className="text-[11px] text-muted-foreground font-body">{subtitle}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <PackageStatusBadge status={status} message={statusMessage} />
+          {onRemove && (
+            <button onClick={onRemove} className="p-1 text-muted-foreground hover:text-destructive transition-colors" title="Remove package">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function PackageStatusBadge({ status, message }: { status?: StagedPackage['status']; message?: string }) {
+  if (!status || status === 'idle') return null;
+  if (status === 'uploading') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground font-body">
+        <Loader2 className="w-3 h-3 animate-spin" /> Uploading
+      </span>
+    );
+  }
+  if (status === 'extracting') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-accent font-body">
+        <Sparkles className="w-3 h-3 animate-pulse" /> Extracting
+      </span>
+    );
+  }
+  if (status === 'complete') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-success font-body">
+        <CheckCircle className="w-3 h-3" /> Done
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] text-destructive font-body" title={message}>
+      <AlertCircle className="w-3 h-3" /> Error
+    </span>
+  );
+}
+
+interface FileChipProps {
+  file: StagedFile;
+  onCategoryChange: (c: DocCategory) => void;
+  onRemove: () => void;
+  onDragStart: (e: React.DragEvent) => void;
+  disabled?: boolean;
+}
+
+function FileChip({ file, onCategoryChange, onRemove, onDragStart, disabled }: FileChipProps) {
+  return (
+    <div
+      draggable={!disabled}
+      onDragStart={onDragStart}
+      className={`flex items-center gap-2 p-2 border border-border rounded-md bg-background ${
+        disabled ? 'opacity-60' : 'cursor-grab active:cursor-grabbing hover:border-accent/40'
+      }`}
+    >
+      <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" strokeWidth={1.5} />
+      <p className="flex-1 min-w-0 text-[12px] font-body text-foreground truncate" title={file.file.name}>
+        {file.file.name}
+      </p>
+      <select
+        value={file.category}
+        onChange={e => onCategoryChange(e.target.value as DocCategory)}
+        disabled={disabled}
+        className="text-[11px] font-body bg-card border border-border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent"
+      >
+        {DOC_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <button
+        onClick={onRemove}
+        disabled={disabled}
+        className="p-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+        title="Remove file"
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </div>
   );
 }

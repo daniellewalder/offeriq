@@ -1,11 +1,13 @@
 import AppLayout from '@/components/AppLayout';
+import { useSearchParams } from 'react-router-dom';
+import { resolveActiveAnalysisId, fetchAnalysisById } from '@/lib/activeAnalysis';
 import { formatCurrency } from '@/data/sampleData';
 import EmptyDealState from '@/components/EmptyDealState';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle, Sparkles, Zap, MessageSquare, ArrowRight, Loader2, Zap as ZapIcon, Gauge, FileWarning, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { fetchLatestAnalysisForUser, fetchOffersWithExtraction, triggerExtraction, saveRiskScore, touchDealAnalysis } from '@/lib/offerService';
+import { fetchOffersWithExtraction, triggerExtraction, saveRiskScore, touchDealAnalysis } from '@/lib/offerService';
 import { adaptOffer } from '@/lib/offerAdapter';
 import { computeScores } from '@/lib/scoringEngine';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -57,6 +59,7 @@ export default function Comparison() {
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     let cancelled = false;
@@ -64,7 +67,9 @@ export default function Comparison() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { setLoading(false); return; }
-        const analysis = await fetchLatestAnalysisForUser(user.id);
+        const activeId = await resolveActiveAnalysisId(user.id, searchParams);
+        if (!activeId) { setLoading(false); return; }
+        const analysis = await fetchAnalysisById(user.id, activeId);
         if (!analysis) { setLoading(false); return; }
         setAnalysisId(analysis.id);
         const rows = await fetchOffersWithExtraction(analysis.id);
@@ -89,7 +94,7 @@ export default function Comparison() {
       }
     })();
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, searchParams]);
 
   const priceDelta = (o: Offer) => o.offerPrice - property.listingPrice;
   const priceDeltaStr = (o: Offer) => {
@@ -127,7 +132,7 @@ export default function Comparison() {
       // Reload analysis + offers (listing price may have changed)
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not signed in');
-      const analysis = await fetchLatestAnalysisForUser(user.id);
+      const analysis = await fetchAnalysisById(user.id, analysisId);
       const listingPrice = Number(analysis?.properties?.listing_price ?? 0);
       const rows = await fetchOffersWithExtraction(analysisId);
       const adapted = rows.map(r => adaptOffer(r, listingPrice));

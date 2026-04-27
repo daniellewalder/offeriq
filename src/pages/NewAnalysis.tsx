@@ -4,6 +4,7 @@ import { ArrowRight, Loader2 } from 'lucide-react';
 import AppLayout from '@/components/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { setStoredActiveAnalysisId } from '@/lib/activeAnalysis';
 
 export default function NewAnalysis() {
   const navigate = useNavigate();
@@ -49,18 +50,23 @@ export default function NewAnalysis() {
         .single();
       if (propErr) throw propErr;
 
-      const { error: daErr } = await supabase
+      const { data: da, error: daErr } = await supabase
         .from('deal_analyses')
         .insert({
           user_id: userId,
           property_id: prop.id,
           name: address.trim() || 'New Analysis',
           status: 'in_progress',
-        });
+        })
+        .select('id')
+        .single();
       if (daErr) throw daErr;
 
+      // Pin this new analysis so subsequent uploads land in the right deal.
+      setStoredActiveAnalysisId(da.id);
+
       toast({ title: 'Analysis created', description: 'Now upload your offer packages.' });
-      navigate('/offer-intake');
+      navigate(`/offer-intake?analysis=${da.id}`);
     } catch (e: any) {
       console.error(e);
       toast({ title: 'Could not create analysis', description: e?.message ?? 'Try again.', variant: 'destructive' });
