@@ -204,6 +204,28 @@ export async function fetchOffersForAnalysis(dealAnalysisId: string) {
 // ─── Fetch latest deal analysis for current user ───
 
 export async function fetchLatestAnalysisForUser(userId: string) {
+  // Prefer the user's currently selected ("active") analysis if one is
+  // pinned in localStorage by the dashboard / URL. This keeps every page
+  // anchored to the same deal as the user navigates the sidebar.
+  let activeId: string | null = null;
+  if (typeof window !== "undefined") {
+    try {
+      activeId = window.localStorage.getItem("offeriq.activeAnalysisId");
+    } catch { /* ignore */ }
+  }
+
+  if (activeId) {
+    const { data: pinned, error: pinErr } = await supabase
+      .from("deal_analyses")
+      .select("*, properties(*)")
+      .eq("id", activeId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (pinErr) throw pinErr;
+    if (pinned) return pinned;
+    // Stored ID is stale — fall through to "latest by updated_at".
+  }
+
   const { data, error } = await supabase
     .from("deal_analyses")
     .select("*, properties(*)")
