@@ -58,6 +58,31 @@ export async function getOrCreateDemoAnalysis(userId: string) {
   return analysis.id;
 }
 
+/**
+ * Resolve the deal analysis a new offer should attach to.
+ * Prefers the user's most recently updated analysis (i.e. the one they
+ * just created in NewAnalysis); falls back to the demo analysis.
+ */
+export async function resolveActiveAnalysisId(userId: string): Promise<string> {
+  const { data: latest } = await supabase
+    .from("deal_analyses")
+    .select("id")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latest?.id) return latest.id;
+  return getOrCreateDemoAnalysis(userId);
+}
+
+/** Bump updated_at on a deal analysis so it sorts to the top of "latest". */
+export async function touchDealAnalysis(dealAnalysisId: string) {
+  await supabase
+    .from("deal_analyses")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", dealAnalysisId);
+}
+
 // ─── Offer Creation ───
 
 export async function createOffer(

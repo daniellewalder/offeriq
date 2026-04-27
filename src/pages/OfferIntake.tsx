@@ -9,7 +9,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  getOrCreateDemoAnalysis,
+  resolveActiveAnalysisId,
+  touchDealAnalysis,
   createOffer,
   uploadDocument,
   triggerExtraction,
@@ -151,10 +152,10 @@ export default function OfferIntake() {
           toast({ title: 'Not signed in', description: 'Please sign in to upload documents.', variant: 'destructive' });
           return;
         }
-        const dealId = await getOrCreateDemoAnalysis(user.id);
+        const dealId = await resolveActiveAnalysisId(user.id);
         const offerId = await createOffer(user.id, dealId, pkg.name);
         setPackages(prev => prev.map(p =>
-          p.id === pkg.id ? { ...p, dbOfferId: offerId } : p
+          p.id === pkg.id ? { ...p, dbOfferId: offerId, dbDealAnalysisId: dealId } : p
         ));
       } catch (e: any) {
         console.error('Failed to create offer in DB:', e);
