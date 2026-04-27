@@ -649,12 +649,12 @@ function AIStrategistPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offerSig]);
 
-  const categoryCards = [
+  const categoryCards = analysis ? [
     { label: 'Highest Price', icon: Crown, buyer: analysis.highest_offer.buyer, detail: formatCurrency(analysis.highest_offer.price), note: analysis.highest_offer.note, accent: 'border-accent/40' },
     { label: 'Safest Close', icon: Shield, buyer: analysis.safest_offer.buyer, detail: `${analysis.safest_offer.close_probability}% close prob.`, note: analysis.safest_offer.note, accent: 'border-success/40' },
     { label: 'Cleanest Structure', icon: CheckCircle, buyer: analysis.cleanest_offer.buyer, detail: `${analysis.cleanest_offer.contingency_count} contingency`, note: analysis.cleanest_offer.note, accent: 'border-info/40' },
     { label: 'Best Balance', icon: Scale, buyer: analysis.best_balance_offer.buyer, detail: 'Recommended', note: analysis.best_balance_offer.note, accent: 'border-accent/60 bg-accent/[0.03]' },
-  ];
+  ] : [];
 
   return (
     <div className="card-elevated overflow-hidden">
