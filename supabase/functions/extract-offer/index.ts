@@ -439,6 +439,29 @@ Deno.serve(async (req: Request) => {
 
     const { fields, missing_items, notable_risks, notable_strengths } = normalizeFields(extraction, parsed);
 
+    // ─── Counter chain handling ───────────────────────────────────────────
+    // Pull counter_chain + counter_status straight off the raw extraction.
+    const rawCounterChain: any[] = Array.isArray((extraction as any)?.counter_chain)
+      ? (extraction as any).counter_chain
+      : [];
+    const counterChain = rawCounterChain
+      .map((c: any) => ({
+        party: c?.party === "seller" ? "seller" : "buyer",
+        price: c?.price === null || c?.price === undefined ? null : Number(c.price),
+        key_changes: Array.isArray(c?.key_changes) ? c.key_changes.filter((s: any) => typeof s === "string") : [],
+        source_document: typeof c?.source_document === "string" ? c.source_document : null,
+        label: typeof c?.label === "string" ? c.label : null,
+      }))
+      .filter((c) => c.price !== null || c.key_changes.length > 0);
+    const counterStatus =
+      typeof (extraction as any)?.counter_status === "string"
+        ? (extraction as any).counter_status
+        : counterChain.length > 1
+        ? counterChain[counterChain.length - 1].party === "seller"
+          ? "seller_countered"
+          : "buyer_countered"
+        : "none";
+
     // Versioning
     const { data: existing } = await supabase
       .from("extracted_offer_fields")
@@ -480,6 +503,13 @@ Deno.serve(async (req: Request) => {
 
     // Roll up into the offers row
     const m = fieldMapFrom(fields);
+
+    // CRITICAL: never let a counter price overwrite the buyer's original offer price.
+    // Prefer the price tied to the FIRST counter_chain entry (buyer's original) if it exists.
+    const originalFromChain = counterChain.find((c) => c.party === "buyer" && typeof c.price === "number");
+    const originalOfferPrice =
+      originalFromChain?.price ??
+      (typeof m.offer_price === "number" ? m.offer_price : null);
     const contingencies: string[] = [];
     if (m.inspection_contingency_present) {
       contingencies.push(m.inspection_contingency_days ? `Inspection (${m.inspection_contingency_days} days)` : "Inspection");
@@ -496,7 +526,7 @@ Deno.serve(async (req: Request) => {
       buyer_name: m.buyer_name ?? offer_name,
       agent_name: m.agent_name ?? null,
       agent_brokerage: m.agent_brokerage ?? null,
-      offer_price: m.offer_price ?? null,
+      offer_price: originalOfferPrice,
       financing_type: m.financing_type ?? null,
       down_payment: m.down_payment_amount ?? null,
       down_payment_percent: m.down_payment_percent ?? null,
@@ -513,6 +543,8 @@ Deno.serve(async (req: Request) => {
       contingencies,
       completeness,
       special_notes: m.special_notes ?? null,
+      counters: counterChain,
+      counter_status: counterStatus,
       updated_at: new Date().toISOString(),
     };
 
@@ -531,6 +563,8 @@ Deno.serve(async (req: Request) => {
         missing_items,
         notable_risks,
         notable_strengths,
+        counter_chain: counterChain,
+        counter_status: counterStatus,
         per_document_errors: parsed.filter((p) => p.error).map((p) => ({ name: p.name, error: p.error })),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
