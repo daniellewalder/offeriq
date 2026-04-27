@@ -8,12 +8,12 @@ import { useToast } from '@/hooks/use-toast';
 export default function NewAnalysis() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [address, setAddress] = useState('1247 Stone Canyon Rd, Bel Air, CA 90077');
-  const [city, setCity] = useState('Bel Air, CA 90077');
-  const [listingPrice, setListingPrice] = useState('8750000');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [listingPrice, setListingPrice] = useState('');
   const [propertyType, setPropertyType] = useState('Single Family');
-  const [sellerGoals, setSellerGoals] = useState('Maximize net, close in 35 days');
-  const [sellerNotes, setSellerNotes] = useState('Seller prefers 30-day close, open to short leaseback. Motivated but wants strong terms.');
+  const [sellerGoals, setSellerGoals] = useState('');
+  const [sellerNotes, setSellerNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
