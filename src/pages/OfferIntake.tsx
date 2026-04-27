@@ -213,19 +213,20 @@ export default function OfferIntake() {
 
           setPackages(prev => prev.map(p =>
             p.id === currentPkgId
-              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'complete', progress: 100, dbDocId: documentId } : d) }
+              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'stored', progress: 100, dbDocId: documentId, errorMessage: undefined } : d) }
               : p
           ));
         } catch (e: any) {
           console.error('Upload failed:', e);
+          const errMsg = e?.message ?? 'Could not upload the document.';
           setPackages(prev => prev.map(p =>
             p.id === currentPkgId
-              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'error', progress: 0 } : d) }
+              ? { ...p, documents: p.documents.map(d => d.id === doc.id ? { ...d, status: 'error', progress: 0, errorMessage: errMsg } : d) }
               : p
           ));
           toast({
             title: 'Upload failed',
-            description: e?.message ?? 'Could not upload the document.',
+            description: errMsg,
             variant: 'destructive',
           });
         }
