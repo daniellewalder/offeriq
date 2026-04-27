@@ -57,6 +57,7 @@ interface OfferPackage {
   extraction: ExtractionResult | null;
   status: 'uploading' | 'extracting' | 'complete' | 'idle';
   dbOfferId?: string;
+  dbDealAnalysisId?: string;
   dbExtractionResult?: any;
   extractionError?: string;
 }
@@ -301,6 +302,11 @@ export default function OfferIntake() {
         title: 'Extraction complete',
         description: `${result.fields_count ?? Object.keys(extraction).length} fields extracted (v${result.version ?? 1}). Opening comparison…`,
       });
+
+      // Make sure Comparison's "latest analysis" picks the one this offer belongs to
+      if (pkg.dbDealAnalysisId) {
+        try { await touchDealAnalysis(pkg.dbDealAnalysisId); } catch {}
+      }
 
       // Navigate so the agent sees their real offer alongside the rest
       setTimeout(() => navigate('/comparison'), 1200);
