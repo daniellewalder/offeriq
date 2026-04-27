@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import {
   LayoutDashboard, FilePlus, FileText, GitCompare, ShieldCheck,
   SlidersHorizontal, Lightbulb, Target, BarChart3, ClipboardCheck,
   FileBarChart, Menu, X, LogOut,
 } from 'lucide-react';
+import {
+  resolveActiveAnalysisId,
+  fetchAnalysisById,
+  ACTIVE_ANALYSIS_EVENT,
+} from '@/lib/activeAnalysis';
 
 const navSections: { label: string; items: { to: string; label: string; icon: any }[] }[] = [
   { label: 'Workspace', items: [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/new-analysis', label: 'New Analysis', icon: FilePlus },
-    { to: '/offer-intake', label: 'Offer Intake', icon: FileText },
   ]},
   { label: 'Analysis', items: [
     { to: '/comparison', label: 'Comparison', icon: GitCompare },
@@ -30,8 +34,14 @@ const navSections: { label: string; items: { to: string; label: string; icon: an
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [email, setEmail] = useState<string>('');
+  const [activeDeal, setActiveDeal] = useState<{
+    address: string;
+    city: string | null;
+    offerCount: number;
+  } | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -42,6 +52,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     });
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  // Load active deal info for the header — re-runs on route change or when
+  // another component announces an active-analysis change.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { if (!cancelled) setActiveDeal(null); return; }
+      const analysisId = await resolveActiveAnalysisId(user.id, searchParams);
+      if (!analysisId) { if (!cancelled) setActiveDeal(null); return; }
+      const analysis = await fetchAnalysisById(user.id, analysisId);
+      if (!analysis) { if (!cancelled) setActiveDeal(null); return; }
+      const { count } = await supabase
+        .from('offers')
+        .select('id', { count: 'exact', head: true })
+        .eq('deal_analysis_id', analysisId);
+      if (cancelled) return;
+      const property = (analysis as any).properties;
+      setActiveDeal({
+        address: property?.address ?? (analysis as any).name ?? 'Untitled deal',
+        city: property?.city ?? null,
+        offerCount: count ?? 0,
+      });
+    };
+    load();
+    const handler = () => load();
+    window.addEventListener(ACTIVE_ANALYSIS_EVENT, handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(ACTIVE_ANALYSIS_EVENT, handler);
+    };
+  }, [location.pathname, searchParams, email]);
 
   const initials = email
     ? email.split('@')[0].split(/[._-]/).filter(Boolean).slice(0, 2)
@@ -110,16 +152,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="hidden lg:flex items-center gap-2.5 text-[11.5px] font-body">
             <span className="text-muted-foreground tracking-[0.12em] uppercase text-[10px]">Active Listing</span>
             <span className="w-1 h-1 rounded-full bg-border-strong" />
-            <span className="text-foreground font-medium">1247 Stone Canyon Rd</span>
-            <span className="text-muted-foreground">· Bel Air, CA</span>
+            {activeDeal ? (
+              <>
+                <span className="text-foreground font-medium">{activeDeal.address}</span>
+                {activeDeal.city && <span className="text-muted-foreground">· {activeDeal.city}</span>}
+              </>
+            ) : (
+              <span className="text-muted-foreground italic">No deal selected</span>
+            )}
           </div>
           <div className="flex-1" />
           <div className="flex items-center gap-5">
-            <div className="hidden md:flex items-center gap-2 text-[11px] font-body">
-              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-              <span className="text-muted-foreground">Live · 5 offers</span>
-            </div>
-            <div className="h-5 w-px bg-border hidden md:block" />
+            {activeDeal && (
+              <>
+                <div className="hidden md:flex items-center gap-2 text-[11px] font-body">
+                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                  <span className="text-muted-foreground">
+                    Live · {activeDeal.offerCount} offer{activeDeal.offerCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <div className="h-5 w-px bg-border hidden md:block" />
+              </>
+            )}
             <span className="text-[11px] text-muted-foreground font-body tracking-wide">v1.2 · Beta</span>
           </div>
         </header>
