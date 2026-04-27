@@ -614,6 +614,8 @@ function AIStrategistPanel({
         close_probability: o.scores.closeProbability,
         financial_confidence: o.scores.financialConfidence,
         contingency_risk: o.scores.contingencyRisk,
+        counters: o.counters ?? [],
+        counter_status: o.counterStatus ?? 'none',
       }));
 
       const response = await fetch(`${SUPABASE_URL}/functions/v1/compare-offers`, {
