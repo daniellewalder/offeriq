@@ -24,6 +24,19 @@ export interface Offer {
   labels: string[];
   /** Optional per-field evidence pulled from extracted_offer_fields */
   evidence?: Record<string, FieldEvidence | undefined>;
+  /** Negotiation history: original offer + each subsequent counter, in order. */
+  counters?: CounterEntry[];
+  /** Status of the negotiation: none | seller_countered | buyer_countered | accepted */
+  counterStatus?: string;
+}
+
+export interface CounterEntry {
+  party: 'buyer' | 'seller';
+  price: number | null;
+  key_changes: string[];
+  source_document: string | null;
+  /** ISO timestamp or human label like "Original offer", "Seller counter #1" */
+  label?: string;
 }
 
 export interface FieldEvidence {
