@@ -448,11 +448,31 @@ export default function OfferIntake() {
                   {activePkg.documents.length > 0 && (
                     <div className="mt-4 space-y-2">
                       {activePkg.documents.map(doc => (
-                        <div key={doc.id} className="flex items-center gap-3 p-3 border border-border rounded-lg">
+                        <div key={doc.id} className={`flex items-start gap-3 p-3 border rounded-lg ${doc.status === 'error' ? 'border-destructive/40 bg-destructive/5' : 'border-border'}`}>
                           <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-body truncate">{doc.file.name}</p>
-                            <p className="text-xs text-muted-foreground font-body">{doc.category}</p>
+                            <p className="text-xs text-muted-foreground font-body">
+                              {doc.category}
+                              {' · '}
+                              <span className={
+                                doc.status === 'error' ? 'text-destructive' :
+                                doc.status === 'complete' ? 'text-success' :
+                                doc.status === 'stored' ? 'text-success' :
+                                doc.status === 'extracting' ? 'text-accent' :
+                                'text-muted-foreground'
+                              }>
+                                {doc.status === 'queued' && 'Queued'}
+                                {doc.status === 'uploading' && 'Uploading'}
+                                {doc.status === 'stored' && 'Stored ✓'}
+                                {doc.status === 'extracting' && 'Extracting…'}
+                                {doc.status === 'complete' && 'Done ✓'}
+                                {doc.status === 'error' && 'Error'}
+                              </span>
+                            </p>
+                            {doc.errorMessage && (
+                              <p className="text-[11px] text-destructive font-body mt-1">{doc.errorMessage}</p>
+                            )}
                           </div>
                           {doc.status === 'uploading' && (
                             <div className="flex items-center gap-2">
@@ -462,6 +482,8 @@ export default function OfferIntake() {
                               <span className="text-xs text-muted-foreground font-body">{doc.progress}%</span>
                             </div>
                           )}
+                          {doc.status === 'stored' && <CheckCircle className="w-4 h-4 text-success" />}
+                          {doc.status === 'extracting' && <Sparkles className="w-4 h-4 text-accent animate-pulse" />}
                           {doc.status === 'complete' && <CheckCircle className="w-4 h-4 text-success" />}
                           {doc.status === 'error' && <AlertCircle className="w-4 h-4 text-destructive" />}
                           <button onClick={() => removeDoc(activePkg.id, doc.id)} className="p-1 text-muted-foreground hover:text-destructive transition-colors">
@@ -469,6 +491,13 @@ export default function OfferIntake() {
                           </button>
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Package-level extraction error */}
+                  {activePkg.extractionError && (
+                    <div className="mt-4 p-3 rounded-lg border border-destructive/30 bg-destructive/5 text-[12px] font-body text-destructive">
+                      <span className="font-medium">Extraction error: </span>{activePkg.extractionError}
                     </div>
                   )}
 
