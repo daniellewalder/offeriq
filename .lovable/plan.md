@@ -1,79 +1,55 @@
-# Make this a real, agent-usable tool
+## What's actually wrong
 
-Goal: An agent should sign in, hit "New Analysis," upload real PDFs, and watch the system actually read the contract — with one labeled demo deal kept around purely as a teaching example. No mock data leaking into "real" views.
+You uploaded **two different documents** for 2339 Lyric:
+1. `2339 Lyric.pdf` — the **buyer's original offer** ($2,235,000)
+2. `Seller Counter Offer #1 - 1225.pdf` — **your counter** ($2,475,000)
 
----
+Both PDFs got attached to the **same single offer record** in the database, and the extraction model picked the most recent price it saw — $2,475,000 — overwriting the original. So the system has no idea there was a negotiation. From the database's point of view there is just one offer at $2,475,000, which is why the AI says "Buyer accepted the seller's counter price." It's not making it up — it literally cannot see the original $2,235,000 anywhere.
 
-## What changes
+This will keep happening on every deal until counters are tracked separately.
 
-### 1. Sample data — keep one, kill the rest
+## The fix
 
-- **Keep** the Bel Air Stone Canyon deal in `src/data/sampleData.ts` (all 5 offers stay) **but only ever surface it behind a clearly labeled "Demo deal — example only" badge** on the Dashboard. Never on real analyses.
-- **Remove** `MOCK_EXTRACTION` from `OfferIntake.tsx` and remove the silent fallback in `runExtraction` that pretends mock data is real extraction. If real extraction fails, show the actual error.
-- **Remove** `recentProperties` mock list — Dashboard should only show real properties from the DB plus one pinned demo card.
-- All non-demo pages (Comparison, Risk, Leverage, Counter, Delta, Report, Seller Portal) currently fall back to `sampleProperty` when no real data exists. Replace those fallbacks with `<EmptyDealState />` (already exists) pointing to "Start a new analysis."
+Treat counters as their own document type with their own price, and compare original-vs-counter instead of overwriting.
 
-### 2. Demo deal becomes a first-class, read-only example
+### 1. Add counter-specific document categories (intake)
+In `OfferIntake.tsx`, expand `DOC_CATEGORIES`:
+- `Purchase Agreement` (buyer's original offer)
+- `Seller Counter` (counters issued by seller)
+- `Buyer Counter` (counters issued by buyer)
+- existing: Proof of Funds, Pre-Approval, Proof of Income, Addenda, Disclosures, Other
 
-- On Dashboard, render a single pinned card: "Demo Deal — 1247 Stone Canyon Rd (example)" with a Sparkles icon and a tooltip "Sample data so you can see the full experience before uploading your own."
-- Clicking it loads all downstream pages with `sampleProperty` and a top banner: "You're viewing the demo deal. Start a new analysis to upload real offers."
-- Real deals never mix demo data into their views.
+When the user uploads, they tag each PDF with the right category — same UX as today, just more accurate options.
 
-### 3. Harden the upload → extract → display pipeline
+### 2. Track counters as a versioned negotiation, not a price overwrite
+Add a `counters` JSONB column on `offers` (or a small `offer_counters` table) so each counter is a separate row with: who issued it (seller/buyer), price, terms changed, source document. The original `offer_price` field stays as the **buyer's original offer price** and never gets overwritten.
 
-This is the part that's been silently failing. Concrete fixes:
+### 3. Update the extract-offer edge function
+- When documents in the package include a `Seller Counter` or `Buyer Counter` category, extract their price/terms into the `counters` array, not into the top-level offer fields.
+- Add a new field in the extraction schema: `counter_chain` — an ordered list of `{party, price, key_changes, source_document}`.
+- Update the system prompt to explicitly say: "If you see a counter-offer document, do NOT overwrite the original offer price. Record it as a separate counter in the negotiation history."
 
-**Upload (`OfferIntake.tsx` + `offerService.ts`)**
-- Show a per-file status pill: `Queued → Uploading → Stored → Extracting → Done / Error`, with the actual error message inline (no toast-only failures).
-- After `uploadDocument` returns, immediately re-query the `documents` row to confirm it actually exists. If it doesn't, surface a hard error.
-- Validate file type before upload: PDF, TXT, or known text MIMEs. Reject scanned-image PDFs with a friendly "This looks like a scanned image — text-based PDFs work best" warning (we can still attempt extraction).
+### 4. Show the negotiation in the Comparison view
+On the offer card and in the AI Strategist panel, render the chain like:
+```text
+Buyer offer:    $2,235,000
+Seller counter: $2,475,000  (you, +$240k, added 3-mo $1 leaseback)
+Status:         Awaiting buyer response
+```
 
-**Extraction (`extract-offer` edge function)**
-- Already calls Gemini 2.5 Pro on real PDF text — that part is solid.
-- Add a `debug` block to the response: `per_document_chars_extracted`, `model`, `tokens_used` (if available), `version`, `parsed_at`. Show this in a small "Extraction details" disclosure on the offer card so the agent can see exactly what the AI saw.
-- If a PDF parses to <200 chars (likely scanned), return a clear `warning` field instead of running the model on near-empty text.
+### 5. Update the AI Strategist prompt (compare-offers function)
+Pass the `counter_chain` into the analysis so it reasons about *the live negotiation*, not a fictional accepted deal. Strategy output becomes things like "buyer is unlikely to accept a $240k bump + free leaseback — consider…" instead of "buyer accepted."
 
-**Display**
-- After extraction completes, immediately navigate the user to `/comparison` with the new offer highlighted, instead of leaving them on the intake page guessing whether anything happened.
-- Comparison/Risk/Leverage pages must read from `fetchOffersWithExtraction(dealAnalysisId)` only — no `sampleProperty` fallback when a real analysis exists.
-
-### 4. A "verify" button on each extracted offer
-
-A small "Re-extract" button on each uploaded offer card that re-runs the edge function and bumps the version, so when you submit a test offer we can prove the pipeline is live and re-runnable.
-
----
-
-## Test plan you'll run after this ships
-
-1. Sign in.
-2. Click "Start a new analysis" → fill in property → continue.
-3. Upload one real offer PDF.
-4. Watch status pills move through Stored → Extracting → Done.
-5. See extracted fields with quoted evidence from your actual PDF.
-6. Land on Comparison and see your real offer next to the demo deal (clearly separated).
-
-If any step fails, the failure is visible in the UI with the real error — no silent mock fallback.
-
----
+### 6. Clean up the existing bad record
+The current 2339 Lyric offer (id `6b0a0154…`) has the wrong $2,475,000 as offer_price. After the schema change, re-run extraction on this offer so it splits properly into original ($2,235,000) + seller counter ($2,475,000 + leaseback).
 
 ## Files touched
+- `supabase/functions/extract-offer/index.ts` — new fields, updated prompt, counter handling
+- `supabase/functions/compare-offers/index.ts` — accept and reason over `counter_chain`
+- new migration — add `counters` column (or table) + backfill
+- `src/pages/OfferIntake.tsx` — new categories, show counter chain in preview
+- `src/pages/Comparison.tsx` — render negotiation history on offer cards + pass to strategist
+- `src/lib/offerService.ts` — types + helpers for counters
 
-- `src/data/sampleData.ts` — add `isDemo: true` flag, prune `recentProperties` to empty
-- `src/pages/OfferIntake.tsx` — remove `MOCK_EXTRACTION`, remove silent fallback, add per-file status, navigate on success
-- `src/pages/Dashboard.tsx` — show pinned demo card + real properties from DB
-- `src/pages/Comparison.tsx`, `RiskScoring.tsx`, `Leverage.tsx`, `CounterStrategy.tsx`, `DeltaView.tsx`, `Report.tsx`, `SellerPortal.tsx` — replace `sampleProperty` fallbacks with `<EmptyDealState />` when no real analysis, except when viewing the demo deal
-- `src/lib/offerService.ts` — add post-upload verification re-query
-- `supabase/functions/extract-offer/index.ts` — return debug block + scanned-PDF warning
-- New: small `DemoBanner` component shown at top of demo-deal pages
-
-No DB migrations needed.
-
----
-
-## What this does NOT include
-
-- Live MLS / comps integration (separate plan).
-- OCR for scanned PDFs (we'll warn, not silently fail).
-- Multi-user collaboration or real-time updates.
-
-Approve this and I'll implement, then you upload an offer and we'll verify it end-to-end.
+## What you'll see after
+Upload buyer offer + your counter → system shows two distinct prices, the strategist treats it as an active negotiation, and "Buyer accepted" never appears unless you actually upload a signed acceptance.

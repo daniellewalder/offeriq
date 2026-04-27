@@ -171,6 +171,31 @@ const EXTRACTION_TOOL = {
           items: { type: "string" },
           description: "Plain-English strengths worth highlighting.",
         },
+        counter_chain: {
+          type: "array",
+          description:
+            "Ordered negotiation history. The FIRST entry MUST be the buyer's original offer. Each subsequent entry is a counter document (Seller Counter or Buyer Counter category). Do NOT include this if there is only one document and no counters.",
+          items: {
+            type: "object",
+            properties: {
+              party: { type: "string", enum: ["buyer", "seller"], description: "Who issued this offer/counter." },
+              price: { type: ["number", "null"], description: "The price proposed in this round." },
+              key_changes: {
+                type: "array",
+                items: { type: "string" },
+                description: "Plain-English bullets describing what changed vs. the prior round (e.g. 'price up $240k', 'added 3-month $1 leaseback').",
+              },
+              source_document: { type: ["string", "null"], description: "Name of the document this round came from." },
+              label: { type: ["string", "null"], description: "Short label, e.g. 'Original offer', 'Seller counter #1'." },
+            },
+            required: ["party", "price", "key_changes", "source_document", "label"],
+          },
+        },
+        counter_status: {
+          type: "string",
+          enum: ["none", "seller_countered", "buyer_countered", "accepted"],
+          description: "Current state of the negotiation based on the documents provided.",
+        },
       },
       required: ["fields", "missing_items", "notable_risks", "notable_strengths"],
     },
@@ -189,6 +214,15 @@ Your job:
 5. Cross-reference: if the purchase agreement says one price and the pre-approval says another, list it under notable_risks with both quotes.
 6. Identify missing items (e.g. "no proof of funds", "earnest money amount not stated").
 7. Identify risks and strengths a listing agent would flag for their seller.
+
+CRITICAL — COUNTER OFFERS:
+Documents have a "category" tag. Look for "Seller Counter" or "Buyer Counter" categories, OR documents whose name/text obviously contains "counter offer".
+
+- The TOP-LEVEL fields (offer_price, earnest_money_deposit, etc.) MUST always reflect the BUYER'S ORIGINAL OFFER from the Purchase Agreement. NEVER overwrite the original offer_price with a counter price.
+- For each counter document, add an entry to counter_chain with party (seller/buyer), the new price proposed, and key_changes vs. the previous round.
+- The first counter_chain entry must always be the buyer's original offer (party: "buyer", price: original offer price, label: "Original offer").
+- Set counter_status accordingly: "none" if no counters, "seller_countered" if the latest doc is a seller counter, "buyer_countered" if the latest is a buyer counter, "accepted" only if a document explicitly shows mutual acceptance/signatures.
+- For source_document on the original offer fields, cite the Purchase Agreement document — NOT the counter doc — even when the counter restates the price.
 
 Return ONLY by calling the record_offer_extraction tool. Do not write any prose response.`;
 
@@ -405,6 +439,29 @@ Deno.serve(async (req: Request) => {
 
     const { fields, missing_items, notable_risks, notable_strengths } = normalizeFields(extraction, parsed);
 
+    // ─── Counter chain handling ───────────────────────────────────────────
+    // Pull counter_chain + counter_status straight off the raw extraction.
+    const rawCounterChain: any[] = Array.isArray((extraction as any)?.counter_chain)
+      ? (extraction as any).counter_chain
+      : [];
+    const counterChain = rawCounterChain
+      .map((c: any) => ({
+        party: c?.party === "seller" ? "seller" : "buyer",
+        price: c?.price === null || c?.price === undefined ? null : Number(c.price),
+        key_changes: Array.isArray(c?.key_changes) ? c.key_changes.filter((s: any) => typeof s === "string") : [],
+        source_document: typeof c?.source_document === "string" ? c.source_document : null,
+        label: typeof c?.label === "string" ? c.label : null,
+      }))
+      .filter((c) => c.price !== null || c.key_changes.length > 0);
+    const counterStatus =
+      typeof (extraction as any)?.counter_status === "string"
+        ? (extraction as any).counter_status
+        : counterChain.length > 1
+        ? counterChain[counterChain.length - 1].party === "seller"
+          ? "seller_countered"
+          : "buyer_countered"
+        : "none";
+
     // Versioning
     const { data: existing } = await supabase
       .from("extracted_offer_fields")
@@ -446,6 +503,13 @@ Deno.serve(async (req: Request) => {
 
     // Roll up into the offers row
     const m = fieldMapFrom(fields);
+
+    // CRITICAL: never let a counter price overwrite the buyer's original offer price.
+    // Prefer the price tied to the FIRST counter_chain entry (buyer's original) if it exists.
+    const originalFromChain = counterChain.find((c) => c.party === "buyer" && typeof c.price === "number");
+    const originalOfferPrice =
+      originalFromChain?.price ??
+      (typeof m.offer_price === "number" ? m.offer_price : null);
     const contingencies: string[] = [];
     if (m.inspection_contingency_present) {
       contingencies.push(m.inspection_contingency_days ? `Inspection (${m.inspection_contingency_days} days)` : "Inspection");
@@ -462,7 +526,7 @@ Deno.serve(async (req: Request) => {
       buyer_name: m.buyer_name ?? offer_name,
       agent_name: m.agent_name ?? null,
       agent_brokerage: m.agent_brokerage ?? null,
-      offer_price: m.offer_price ?? null,
+      offer_price: originalOfferPrice,
       financing_type: m.financing_type ?? null,
       down_payment: m.down_payment_amount ?? null,
       down_payment_percent: m.down_payment_percent ?? null,
@@ -479,6 +543,8 @@ Deno.serve(async (req: Request) => {
       contingencies,
       completeness,
       special_notes: m.special_notes ?? null,
+      counters: counterChain,
+      counter_status: counterStatus,
       updated_at: new Date().toISOString(),
     };
 
@@ -497,6 +563,8 @@ Deno.serve(async (req: Request) => {
         missing_items,
         notable_risks,
         notable_strengths,
+        counter_chain: counterChain,
+        counter_status: counterStatus,
         per_document_errors: parsed.filter((p) => p.error).map((p) => ({ name: p.name, error: p.error })),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },

@@ -61,6 +61,8 @@ export function adaptOffer(
     documents,
     labels: o.labels ?? [],
     evidence,
+    counters: Array.isArray(o.counters) ? o.counters : [],
+    counterStatus: o.counter_status ?? "none",
     scores: {
       offerStrength: 0,
       closeProbability: 0,

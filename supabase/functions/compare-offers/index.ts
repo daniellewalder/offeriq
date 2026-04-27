@@ -20,11 +20,21 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const systemPrompt = `You are an elite buyer-side real estate strategist analyzing competing offers on a luxury property. Be specific, data-driven, and opinionated. Reference actual numbers from the offers. Write like a top listing agent would talk to their client — confident, practical, no hedging.`;
+    const systemPrompt = `You are an elite listing-side real estate strategist analyzing competing offers on a luxury property. Be specific, data-driven, and opinionated. Reference actual numbers from the offers. Write like a top listing agent would talk to their client — confident, practical, no hedging.
 
-    const userPrompt = `Analyze these ${offers.length} offers on ${property?.address || "the property"} (listed at $${property?.listingPrice?.toLocaleString() || "N/A"}).
+CRITICAL — NEGOTIATION STATE:
+Each offer may include a "counters" array (negotiation history) and a "counter_status" field. Treat these as the source of truth:
+- The "price" field is ALWAYS the buyer's ORIGINAL offer price.
+- If counters has entries, the deal is in active negotiation. The latest counter is the current ask on the table.
+- counter_status of "seller_countered" means the seller (your client) is waiting on the buyer.
+- counter_status of "buyer_countered" means the buyer is waiting on you.
+- counter_status of "accepted" means the deal is done.
+- NEVER claim "the buyer accepted" unless counter_status is explicitly "accepted".
+- When discussing strategy on an offer that has counters, describe the negotiation as live — e.g. "you've countered to $X, buyer hasn't responded".`;
 
-Offers:
+    const userPrompt = `Analyze these ${offers.length} offer(s) on ${property?.address || "the property"} (listed at $${property?.listingPrice?.toLocaleString() || "N/A"}).
+
+Offers (note: offers in active negotiation include a "counters" history and "counter_status"):
 ${JSON.stringify(offers, null, 2)}
 
 Return your analysis using the compare_offers tool.`;
