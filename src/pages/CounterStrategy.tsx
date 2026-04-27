@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AppLayout from "@/components/AppLayout";
+import { useSearchParams } from "react-router-dom";
+import { resolveActiveAnalysisId, fetchAnalysisById } from "@/lib/activeAnalysis";
 import { formatCurrency } from "@/data/sampleData";
 import EmptyDealState from "@/components/EmptyDealState";
 import {
@@ -17,7 +19,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  fetchLatestAnalysisForUser,
   fetchOffersWithExtraction,
   fetchLatestRiskScores,
   fetchSellerPriorities,
@@ -63,6 +64,7 @@ const likelihoodBar = (v: number) =>
 
 export default function CounterStrategyPage() {
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [usingDemo, setUsingDemo] = useState(false);
   const [dealAnalysisId, setDealAnalysisId] = useState<string | null>(null);
@@ -87,7 +89,8 @@ export default function CounterStrategyPage() {
         let analysisId: string | null = null;
 
         if (user) {
-          const analysis = await fetchLatestAnalysisForUser(user.id);
+          const activeId = await resolveActiveAnalysisId(user.id, searchParams);
+          const analysis = activeId ? await fetchAnalysisById(user.id, activeId) : null;
           if (analysis) {
             analysisId = analysis.id;
             const property = (analysis as any).properties;
