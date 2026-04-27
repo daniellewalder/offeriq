@@ -2,11 +2,12 @@ import AppLayout from '@/components/AppLayout';
 import { formatCurrency } from '@/data/sampleData';
 import EmptyDealState from '@/components/EmptyDealState';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle, Sparkles, Zap, MessageSquare, ArrowRight, Loader2, Zap as ZapIcon, Gauge, FileWarning } from 'lucide-react';
+import { ArrowUpDown, Crown, Shield, Scale, TrendingUp, Clock, AlertTriangle, CheckCircle, Sparkles, Zap, MessageSquare, ArrowRight, Loader2, Zap as ZapIcon, Gauge, FileWarning, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { fetchLatestAnalysisForUser, fetchOffersWithExtraction } from '@/lib/offerService';
+import { fetchLatestAnalysisForUser, fetchOffersWithExtraction, triggerExtraction, saveRiskScore, touchDealAnalysis } from '@/lib/offerService';
 import { adaptOffer } from '@/lib/offerAdapter';
+import { computeScores } from '@/lib/scoringEngine';
 import { Skeleton } from '@/components/ui/skeleton';
 
 type SortKey =
@@ -53,6 +54,8 @@ export default function Comparison() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [rerunning, setRerunning] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -63,6 +66,7 @@ export default function Comparison() {
         if (!user) { setLoading(false); return; }
         const analysis = await fetchLatestAnalysisForUser(user.id);
         if (!analysis) { setLoading(false); return; }
+        setAnalysisId(analysis.id);
         const rows = await fetchOffersWithExtraction(analysis.id);
         if (cancelled) return;
         const listingPrice = Number(analysis.properties?.listing_price ?? 0);
@@ -91,6 +95,90 @@ export default function Comparison() {
   const priceDeltaStr = (o: Offer) => {
     const d = priceDelta(o);
     return d >= 0 ? `+${formatCurrency(d)}` : formatCurrency(d);
+  };
+
+  const handleRerun = async () => {
+    if (!analysisId) return;
+    setRerunning(true);
+    try {
+      // Re-pull offers with documents
+      const { data: dbOffers, error: oErr } = await supabase
+        .from('offers')
+        .select('id, buyer_name, documents(id, name, category)')
+        .eq('deal_analysis_id', analysisId);
+      if (oErr) throw oErr;
+
+      let extracted = 0;
+      for (const o of dbOffers ?? []) {
+        const docs = (o as any).documents ?? [];
+        if (docs.length === 0) continue;
+        try {
+          await triggerExtraction(
+            o.id,
+            (o as any).buyer_name ?? 'Offer',
+            docs.map((d: any) => ({ id: d.id, name: d.name, category: d.category })),
+          );
+          extracted++;
+        } catch (e) {
+          console.error('Re-extract failed for', o.id, e);
+        }
+      }
+
+      // Reload analysis + offers (listing price may have changed)
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not signed in');
+      const analysis = await fetchLatestAnalysisForUser(user.id);
+      const listingPrice = Number(analysis?.properties?.listing_price ?? 0);
+      const rows = await fetchOffersWithExtraction(analysisId);
+      const adapted = rows.map(r => adaptOffer(r, listingPrice));
+
+      // Recompute + persist risk scores against fresh listing price
+      let scored = 0;
+      for (const offer of adapted) {
+        const s = computeScores(offer, listingPrice);
+        try {
+          await saveRiskScore(offer.id, {
+            offerStrength: s.offerStrength.score,
+            closeProbability: s.closeProbability.score,
+            financialConfidence: s.financialConfidence.score,
+            contingencyRisk: s.contingencyRisk.score,
+            timingRisk: s.timingRisk.score,
+            packageCompleteness: s.packageCompleteness.score,
+            factorDetails: {
+              offer_strength: s.offerStrength.factors,
+              close_probability: s.closeProbability.factors,
+              financial_confidence: s.financialConfidence.factors,
+              contingency_risk: s.contingencyRisk.factors,
+              timing_risk: s.timingRisk.factors,
+              package_completeness: s.packageCompleteness.factors,
+            },
+          });
+          scored++;
+        } catch (e) {
+          console.error('Score save failed for', offer.id, e);
+        }
+      }
+
+      await touchDealAnalysis(analysisId);
+
+      setOffers(adapted);
+      setProperty({
+        address: analysis?.properties?.address ?? 'Property',
+        listingPrice,
+        sellerNotes: analysis?.properties?.seller_notes ?? '',
+        sellerGoals: analysis?.properties?.seller_goals ?? [],
+      });
+
+      toast({
+        title: 'Analysis refreshed',
+        description: `Re-extracted ${extracted} offer${extracted === 1 ? '' : 's'} and re-scored ${scored}.`,
+      });
+    } catch (e: any) {
+      console.error(e);
+      toast({ title: 'Re-run failed', description: e?.message ?? 'Could not refresh analysis.', variant: 'destructive' });
+    } finally {
+      setRerunning(false);
+    }
   };
 
   const sorted = useMemo(() => [...offers].sort((a, b) => {
@@ -192,6 +280,15 @@ export default function Comparison() {
                 </button>
               ))}
             </div>
+            <button
+              onClick={handleRerun}
+              disabled={rerunning || !analysisId}
+              className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[11px] font-medium font-body tracking-wide bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-60"
+              title="Re-extract offers and recompute risk scores against the current listing price and counter details"
+            >
+              {rerunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              {rerunning ? 'Re-running…' : 'Re-run Analysis'}
+            </button>
           </div>
         </div>
 
