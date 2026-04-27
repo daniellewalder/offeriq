@@ -9,7 +9,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  getOrCreateDemoAnalysis,
+  resolveActiveAnalysisId,
+  touchDealAnalysis,
   createOffer,
   uploadDocument,
   triggerExtraction,
@@ -56,6 +57,7 @@ interface OfferPackage {
   extraction: ExtractionResult | null;
   status: 'uploading' | 'extracting' | 'complete' | 'idle';
   dbOfferId?: string;
+  dbDealAnalysisId?: string;
   dbExtractionResult?: any;
   extractionError?: string;
 }
@@ -151,10 +153,10 @@ export default function OfferIntake() {
           toast({ title: 'Not signed in', description: 'Please sign in to upload documents.', variant: 'destructive' });
           return;
         }
-        const dealId = await getOrCreateDemoAnalysis(user.id);
+        const dealId = await resolveActiveAnalysisId(user.id);
         const offerId = await createOffer(user.id, dealId, pkg.name);
         setPackages(prev => prev.map(p =>
-          p.id === pkg.id ? { ...p, dbOfferId: offerId } : p
+          p.id === pkg.id ? { ...p, dbOfferId: offerId, dbDealAnalysisId: dealId } : p
         ));
       } catch (e: any) {
         console.error('Failed to create offer in DB:', e);
@@ -300,6 +302,11 @@ export default function OfferIntake() {
         title: 'Extraction complete',
         description: `${result.fields_count ?? Object.keys(extraction).length} fields extracted (v${result.version ?? 1}). Opening comparison…`,
       });
+
+      // Make sure Comparison's "latest analysis" picks the one this offer belongs to
+      if (pkg.dbDealAnalysisId) {
+        try { await touchDealAnalysis(pkg.dbDealAnalysisId); } catch {}
+      }
 
       // Navigate so the agent sees their real offer alongside the rest
       setTimeout(() => navigate('/comparison'), 1200);
