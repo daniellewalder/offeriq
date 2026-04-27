@@ -64,6 +64,23 @@ export async function getOrCreateDemoAnalysis(userId: string) {
  * just created in NewAnalysis); falls back to the demo analysis.
  */
 export async function resolveActiveAnalysisId(userId: string): Promise<string> {
+  // Pinned analysis (set when the user opens a deal card) wins.
+  let activeId: string | null = null;
+  if (typeof window !== "undefined") {
+    try {
+      activeId = window.localStorage.getItem("offeriq.activeAnalysisId");
+    } catch { /* ignore */ }
+  }
+  if (activeId) {
+    const { data: pinned } = await supabase
+      .from("deal_analyses")
+      .select("id")
+      .eq("id", activeId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (pinned?.id) return pinned.id;
+  }
+
   const { data: latest } = await supabase
     .from("deal_analyses")
     .select("id")
