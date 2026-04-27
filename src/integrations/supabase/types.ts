@@ -304,6 +304,8 @@ export type Database = {
           completeness: number | null
           concessions: string | null
           contingencies: string[] | null
+          counter_status: string
+          counters: Json
           created_at: string
           deal_analysis_id: string
           down_payment: number | null
@@ -331,6 +333,8 @@ export type Database = {
           completeness?: number | null
           concessions?: string | null
           contingencies?: string[] | null
+          counter_status?: string
+          counters?: Json
           created_at?: string
           deal_analysis_id: string
           down_payment?: number | null
@@ -358,6 +362,8 @@ export type Database = {
           completeness?: number | null
           concessions?: string | null
           contingencies?: string[] | null
+          counter_status?: string
+          counters?: Json
           created_at?: string
           deal_analysis_id?: string
           down_payment?: number | null
