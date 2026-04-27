@@ -280,6 +280,15 @@ export default function Comparison() {
                 </button>
               ))}
             </div>
+            <button
+              onClick={handleRerun}
+              disabled={rerunning || !analysisId}
+              className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[11px] font-medium font-body tracking-wide bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-60"
+              title="Re-extract offers and recompute risk scores against the current listing price and counter details"
+            >
+              {rerunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              {rerunning ? 'Re-running…' : 'Re-run Analysis'}
+            </button>
           </div>
         </div>
 
