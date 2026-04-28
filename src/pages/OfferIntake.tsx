@@ -181,6 +181,8 @@ export default function OfferIntake() {
       file: f,
       category: inferCategory(f.name),
       packageId: null,
+      groupingSource: 'none',
+      groupingConfidence: 0,
     }));
     setFiles(prev => [...prev, ...staged]);
   };
@@ -215,45 +217,187 @@ export default function OfferIntake() {
     setPackages(prev => prev.filter(p => p.id !== id));
   };
 
-  const autoGroup = () => {
+  /**
+   * Smart auto-group: send the unassigned files to the classify-documents
+   * edge function, which reads the PDF text and identifies the buyer per
+   * file. Files that come back with confidence >= AI_CONFIDENT are placed
+   * into packages keyed by the buyer name. Lower-confidence files are
+   * pre-placed using the filename heuristic but flagged "Needs review",
+   * and any file the AI couldn't classify at all gets queued for the
+   * manual "Which buyer?" modal.
+   */
+  const autoGroup = async () => {
     if (files.length === 0) {
       toast({ title: 'Add some files first', description: 'Drop PDFs into the tray, then auto-group.' });
       return;
     }
-    // Group unassigned files by inferred buyer key.
-    const groups = new Map<string, StagedFile[]>();
-    for (const f of files) {
-      if (f.packageId !== null) continue;
-      const key = inferBuyerKey(f.file.name);
-      const arr = groups.get(key) ?? [];
-      arr.push(f);
-      groups.set(key, arr);
-    }
-    if (groups.size === 0) {
+    const unassignedFiles = files.filter(f => f.packageId === null);
+    if (unassignedFiles.length === 0) {
       toast({ title: 'Nothing to group', description: 'All files are already assigned to a package.' });
       return;
     }
 
+    setGrouping(true);
+    // Per-file AI verdicts, defaulted to "no result". We update them as
+    // soon as the edge function returns; if it fails we keep these
+    // defaults and fall back to the filename heuristic for everything.
+    let verdicts = new Map<string, { buyer: string | null; confidence: number }>(
+      unassignedFiles.map(f => [f.id, { buyer: null, confidence: 0 }]),
+    );
+
+    try {
+      const fd = new FormData();
+      for (const sf of unassignedFiles) fd.append('files', sf.file, sf.file.name);
+      const { data, error } = await supabase.functions.invoke('classify-documents', { body: fd });
+      if (error) throw error;
+      const results: Array<{ filename: string; buyer_name: string | null; confidence: number }> =
+        Array.isArray((data as any)?.results) ? (data as any).results : [];
+      // Match results back to staged files by filename. Multiple files can
+      // share a name in theory, so we pop matches off as we go.
+      const remaining = [...results];
+      for (const sf of unassignedFiles) {
+        const idx = remaining.findIndex(r => r.filename === sf.file.name);
+        if (idx >= 0) {
+          const r = remaining.splice(idx, 1)[0];
+          verdicts.set(sf.id, { buyer: r.buyer_name, confidence: Number(r.confidence) || 0 });
+        }
+      }
+    } catch (e: any) {
+      console.warn('classify-documents failed, falling back to filename heuristic', e);
+      toast({
+        title: 'AI classifier unavailable',
+        description: 'Grouping by filename instead — please double-check the packages.',
+      });
+    }
+
+    // Bucket files by the chosen grouping key.
+    //  - If AI returned a buyer with confidence >= AI_CONFIDENT, that's the key.
+    //  - If AI returned a buyer below the threshold, still group on it but
+    //    mark the file as "needs review".
+    //  - If AI returned nothing, fall back to the filename heuristic AND
+    //    queue the file for the manual modal so the agent confirms.
+    type Bucket = {
+      key: string;
+      displayName: string;
+      members: { id: string; source: 'ai' | 'filename'; confidence: number }[];
+    };
+    const buckets = new Map<string, Bucket>();
+    const needsManual: string[] = [];
+
+    for (const sf of unassignedFiles) {
+      const v = verdicts.get(sf.id) ?? { buyer: null, confidence: 0 };
+      let key: string;
+      let displayName: string;
+      let source: 'ai' | 'filename';
+      let confidence = v.confidence;
+
+      if (v.buyer && v.buyer.trim().length > 0) {
+        key = v.buyer.trim().toLowerCase();
+        displayName = titleCaseBuyerKey(v.buyer.trim());
+        source = 'ai';
+      } else {
+        const k = inferBuyerKey(sf.file.name);
+        key = k;
+        displayName = titleCaseBuyerKey(k) || sf.file.name.replace(/\.[^./]+$/, '');
+        source = 'filename';
+        confidence = 0;
+        needsManual.push(sf.id);
+      }
+
+      const bucket = buckets.get(key) ?? { key, displayName, members: [] };
+      bucket.members.push({ id: sf.id, source, confidence });
+      buckets.set(key, bucket);
+    }
+
+    // Materialize buckets into packages.
     const newPackages: StagedPackage[] = [];
-    const fileUpdates = new Map<string, string>(); // fileId -> packageId
+    const fileUpdates = new Map<string, { pkgId: string; source: 'ai' | 'filename'; confidence: number }>();
     let i = packages.length;
-    for (const [key, group] of groups.entries()) {
+    for (const bucket of buckets.values()) {
       i += 1;
       const pkg: StagedPackage = {
         id: newId('pkg'),
-        name: titleCase(key) || `Offer ${i}`,
+        name: bucket.displayName || `Offer ${i}`,
         status: 'idle',
       };
       newPackages.push(pkg);
-      for (const f of group) fileUpdates.set(f.id, pkg.id);
+      for (const m of bucket.members) {
+        fileUpdates.set(m.id, { pkgId: pkg.id, source: m.source, confidence: m.confidence });
+      }
     }
 
     setPackages(prev => [...prev, ...newPackages]);
-    setFiles(prev => prev.map(f => fileUpdates.has(f.id) ? { ...f, packageId: fileUpdates.get(f.id)! } : f));
+    setFiles(prev => prev.map(f => {
+      const u = fileUpdates.get(f.id);
+      if (!u) return f;
+      return { ...f, packageId: u.pkgId, groupingSource: u.source, groupingConfidence: u.confidence };
+    }));
+    setGrouping(false);
+
+    if (needsManual.length > 0) {
+      // Open the modal for the first uncertain file; the user can pick
+      // a package or create a new one. We then advance through the queue.
+      setManualQueue(needsManual);
+      setManualPkgId('__new__');
+      setManualNewName('');
+      setManualOpen(true);
+    }
+
     toast({
       title: `Created ${newPackages.length} package${newPackages.length === 1 ? '' : 's'}`,
-      description: 'Drag files between packages to fix any misgroupings.',
+      description: needsManual.length > 0
+        ? `${needsManual.length} file${needsManual.length === 1 ? ' needs' : 's need'} a quick review.`
+        : 'Drag files between packages to fix any misgroupings.',
     });
+  };
+
+  // ── Manual "which buyer?" modal queue ──
+  const currentManualFile = useMemo(() => {
+    const id = manualQueue[0];
+    return id ? files.find(f => f.id === id) ?? null : null;
+  }, [manualQueue, files]);
+
+  const advanceManualQueue = () => {
+    setManualQueue(q => q.slice(1));
+    setManualPkgId('__new__');
+    setManualNewName('');
+  };
+
+  const closeManualModal = () => {
+    setManualOpen(false);
+    setManualQueue([]);
+  };
+
+  const submitManualAssignment = () => {
+    const file = currentManualFile;
+    if (!file) { closeManualModal(); return; }
+    let pkgId = manualPkgId;
+    if (pkgId === '__new__') {
+      const name = manualNewName.trim() || `Offer ${packages.length + 1}`;
+      pkgId = newId('pkg');
+      setPackages(prev => [...prev, { id: pkgId, name, status: 'idle' }]);
+    }
+    setFiles(prev => prev.map(f =>
+      f.id === file.id
+        ? { ...f, packageId: pkgId, groupingSource: 'manual', groupingConfidence: 1 }
+        : f,
+    ));
+    if (manualQueue.length <= 1) {
+      setManualOpen(false);
+      setManualQueue([]);
+    } else {
+      advanceManualQueue();
+    }
+  };
+
+  const skipManualAssignment = () => {
+    // Leave file in its (uncertain) auto-grouping; just move on.
+    if (manualQueue.length <= 1) {
+      setManualOpen(false);
+      setManualQueue([]);
+    } else {
+      advanceManualQueue();
+    }
   };
 
   // ── Drag & drop between packages ──
