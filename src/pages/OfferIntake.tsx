@@ -586,6 +586,64 @@ export default function OfferIntake() {
           onClose={handleReviewClosed}
           onAllReviewed={handleReviewClosed}
         />
+        {/* Manual buyer-assignment modal: appears when the AI classifier
+            could not identify a buyer with high confidence for a file. */}
+        <Dialog open={manualOpen} onOpenChange={(o) => { if (!o) closeManualModal(); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Which buyer does this document belong to?</DialogTitle>
+              <DialogDescription>
+                We couldn't tell from the document content. Pick an existing package or create a new one.
+              </DialogDescription>
+            </DialogHeader>
+            {currentManualFile && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 p-3 rounded-md border border-border bg-muted/30">
+                  <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" strokeWidth={1.5} />
+                  <p className="text-[12px] font-body text-foreground truncate" title={currentManualFile.file.name}>
+                    {currentManualFile.file.name}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground font-body">
+                    Assign to
+                  </label>
+                  <Select value={manualPkgId} onValueChange={setManualPkgId}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__new__">+ New buyer / package</SelectItem>
+                      {packages.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {manualPkgId === '__new__' && (
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground font-body">
+                      New package name
+                    </label>
+                    <Input
+                      value={manualNewName}
+                      onChange={(e) => setManualNewName(e.target.value)}
+                      placeholder="e.g. Smith offer"
+                      autoFocus
+                    />
+                  </div>
+                )}
+                {manualQueue.length > 1 && (
+                  <p className="text-[11px] text-muted-foreground font-body">
+                    {manualQueue.length - 1} more file{manualQueue.length - 1 === 1 ? '' : 's'} after this.
+                  </p>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="ghost" onClick={skipManualAssignment}>Skip</Button>
+              <Button onClick={submitManualAssignment}>Assign</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         {/* Header */}
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
