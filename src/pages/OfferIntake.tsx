@@ -930,6 +930,7 @@ function FileChip({ file, onCategoryChange, onRemove, onDragStart, disabled }: F
       <p className="flex-1 min-w-0 text-[12px] font-body text-foreground truncate" title={file.file.name}>
         {file.file.name}
       </p>
+      <GroupingBadge file={file} />
       <select
         value={file.category}
         onChange={e => onCategoryChange(e.target.value as DocCategory)}
@@ -947,5 +948,39 @@ function FileChip({ file, onCategoryChange, onRemove, onDragStart, disabled }: F
         <X className="w-3.5 h-3.5" />
       </button>
     </div>
+  );
+}
+
+/**
+ * Per-file confidence badge shown next to its name in the staging tray.
+ *  - "Auto-grouped" (green) when the AI placed the file with confidence >= AI_CONFIDENT
+ *  - "Needs review" (yellow) when the AI was unsure or we fell back to a filename heuristic
+ *  - "Confirmed" (subtle) after the agent manually placed/moved it
+ *  - Nothing for files still sitting in the unassigned tray
+ */
+function GroupingBadge({ file }: { file: StagedFile }) {
+  if (file.packageId === null || !file.groupingSource || file.groupingSource === 'none') return null;
+  if (file.groupingSource === 'manual') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-body bg-muted text-muted-foreground" title="You placed this file manually.">
+        <CheckCircle className="w-2.5 h-2.5" /> Confirmed
+      </span>
+    );
+  }
+  if (file.groupingSource === 'ai' && (file.groupingConfidence ?? 0) >= AI_CONFIDENT) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-body bg-success/15 text-success" title={`AI confidence ${(Math.round((file.groupingConfidence ?? 0) * 100))}%`}>
+        <CheckCircle className="w-2.5 h-2.5" /> Auto-grouped
+      </span>
+    );
+  }
+  // Filename fallback or low-confidence AI = needs review
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-body bg-warning/15 text-warning"
+      title="Verify this file is in the right package."
+    >
+      <HelpCircle className="w-2.5 h-2.5" /> Needs review
+    </span>
   );
 }
