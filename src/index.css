@@ -178,18 +178,36 @@
   /* ── Cards ────────────────────────────────────────────────────── */
   .card-elevated {
     @apply bg-card rounded-lg border border-border/70 transition-all duration-300;
-    box-shadow: var(--shadow-xs);
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.04),
+      0 4px 12px rgba(0,0,0,0.06),
+      inset 0 1px 0 rgba(255,255,255,0.9);
     transition-timing-function: var(--ease-luxe);
   }
   .card-elevated:hover {
     border-color: hsl(var(--border-strong) / 0.8);
-    box-shadow: var(--shadow-sm);
+    box-shadow:
+      0 2px 4px rgba(0,0,0,0.05),
+      0 12px 28px rgba(0,0,0,0.10),
+      inset 0 1px 0 rgba(255,255,255,0.9);
+    transform: translateY(-2px);
   }
 
   .card-paper {
     @apply rounded-lg border border-border/70;
     background: var(--gradient-paper);
-    box-shadow: var(--shadow-xs), var(--shadow-inset);
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.04),
+      0 4px 12px rgba(0,0,0,0.06),
+      inset 0 1px 0 rgba(255,255,255,0.9);
+    transition: transform 240ms var(--ease-luxe), box-shadow 240ms var(--ease-luxe);
+  }
+  .card-paper:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 2px 4px rgba(0,0,0,0.05),
+      0 12px 28px rgba(0,0,0,0.10),
+      inset 0 1px 0 rgba(255,255,255,0.9);
   }
 
   .card-feature {
@@ -417,3 +435,128 @@
   to { transform: translateX(0); opacity: 1; }
 }
 .animate-slide-in-right { animation: slide-in-right 240ms var(--ease-luxe); }
+
+/* ─────────────────────────────────────────────────────────────────
+ * Depth & polish layer — sidebar contrast, frosted bars, gold glow
+ * Recommendation banner, animated score rings
+ * ──────────────────────────────────────────────────────────────── */
+
+/* Sidebar nav contrast — hit the AppLayout markup directly */
+aside.bg-sidebar {
+  position: relative;
+  isolation: isolate;
+}
+aside.bg-sidebar::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 320px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(196,160,82,0.12), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+aside.bg-sidebar > * { position: relative; z-index: 1; }
+
+/* Resting nav links: warmer, brighter than before */
+aside.bg-sidebar nav a {
+  color: rgba(255,255,255,0.55);
+}
+aside.bg-sidebar nav a:hover {
+  color: rgba(255,255,255,0.88) !important;
+  background-color: rgba(255,255,255,0.04);
+}
+/* Active nav link — full warm white */
+aside.bg-sidebar nav a.bg-sidebar-accent,
+aside.bg-sidebar nav a[class*="bg-sidebar-accent"] {
+  color: #f0e8d4 !important;
+  background-color: rgba(196,160,82,0.10) !important;
+}
+aside.bg-sidebar nav a.bg-sidebar-accent svg,
+aside.bg-sidebar nav a[class*="bg-sidebar-accent"] svg {
+  color: hsl(var(--accent)) !important;
+}
+/* Brand wordmark + user name legibility */
+aside.bg-sidebar .text-sidebar-primary { color: #f0e8d4 !important; }
+aside.bg-sidebar .text-sidebar-accent-foreground { color: #f0e8d4 !important; }
+aside.bg-sidebar .text-sidebar-foreground\/55,
+aside.bg-sidebar .text-sidebar-foreground\/45,
+aside.bg-sidebar .text-sidebar-foreground\/40 { color: rgba(255,255,255,0.55) !important; }
+
+/* Frosted topbar */
+header.sticky {
+  background-color: rgba(250, 248, 243, 0.72) !important;
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  border-bottom: 1px solid hsl(var(--border) / 0.7);
+}
+
+/* ── Recommendation banner ─────────────────────────────────────── */
+.rec-banner {
+  position: relative;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #1e2a42 0%, #141c2e 100%);
+  color: #f0e8d4;
+  overflow: hidden;
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.10),
+    0 12px 32px rgba(0,0,0,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.rec-banner::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(196,160,82,0.0) 8%,
+    rgba(232,200,120,0.9) 50%,
+    rgba(196,160,82,0.0) 92%,
+    transparent 100%);
+  background-size: 200% 100%;
+  animation: rec-shimmer 4.5s var(--ease-luxe) infinite;
+  pointer-events: none;
+}
+.rec-banner::after {
+  content: "";
+  position: absolute;
+  top: -40%; right: -20%;
+  width: 60%; height: 180%;
+  background: radial-gradient(ellipse at center, rgba(196,160,82,0.18), transparent 60%);
+  pointer-events: none;
+}
+.rec-banner > * { position: relative; z-index: 1; }
+.rec-banner .btn-gold:hover {
+  box-shadow:
+    0 0 0 1px rgba(232,200,120,0.4),
+    0 0 24px rgba(232,200,120,0.45),
+    var(--shadow-md);
+}
+@keyframes rec-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Animated score ring ───────────────────────────────────────── */
+.score-ring-svg { transform: rotate(-90deg); }
+.score-ring-svg circle.track {
+  fill: none;
+  stroke: hsl(var(--surface-3));
+  stroke-width: 4;
+}
+.score-ring-svg circle.value {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: var(--ring-circ, 138);
+  stroke-dashoffset: var(--ring-circ, 138);
+  animation: ring-draw 900ms var(--ease-luxe) forwards;
+  animation-delay: 120ms;
+}
+.score-ring-svg circle.value.risk-low    { stroke: hsl(var(--success)); }
+.score-ring-svg circle.value.risk-medium { stroke: hsl(var(--warning)); }
+.score-ring-svg circle.value.risk-high   { stroke: hsl(var(--destructive)); }
+.score-ring-svg circle.value.risk-gold   { stroke: hsl(var(--accent)); }
+@keyframes ring-draw {
+  to { stroke-dashoffset: var(--ring-target, 0); }
+}
