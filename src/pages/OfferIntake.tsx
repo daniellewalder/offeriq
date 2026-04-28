@@ -1,7 +1,7 @@
 import AppLayout from '@/components/AppLayout';
 import {
   CheckCircle, AlertCircle, FileText, Upload, Plus, X, Sparkles,
-  Loader2, ArrowRight, Wand2, Trash2, Folder,
+  Loader2, ArrowRight, Wand2, Trash2, Folder, HelpCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
@@ -22,21 +22,23 @@ import {
 import ReviewExtractionDialog, {
   type ReviewItem,
 } from '@/components/ReviewExtractionDialog';
+import {
+  DOC_CATEGORIES,
+  type DocCategory,
+  inferCategory,
+  inferBuyerKey,
+  titleCaseBuyerKey,
+} from '@/lib/intakeHeuristics';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-const DOC_CATEGORIES = [
-  'Purchase Agreement',
-  'Seller Counter',
-  'Buyer Counter',
-  'Proof of Funds',
-  'Pre-Approval',
-  'Proof of Income',
-  'Addenda',
-  'Disclosures',
-  'Other',
-] as const;
-type DocCategory = typeof DOC_CATEGORIES[number];
 
 interface StagedFile {
   id: string;
@@ -44,6 +46,10 @@ interface StagedFile {
   category: DocCategory;
   // Which package this file is currently assigned to. `null` = unassigned (sitting in the staging tray).
   packageId: string | null;
+  // Where the current packageId came from, so we can show "Auto-grouped"
+  // (green) vs "Needs review" (yellow) badges in the staging tray.
+  groupingSource?: 'ai' | 'filename' | 'manual' | 'none';
+  groupingConfidence?: number; // 0..1, only meaningful when groupingSource === 'ai'
 }
 
 interface StagedPackage {
@@ -66,46 +72,10 @@ interface AnalysisSummary {
 const newId = (p: string) =>
   `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-/**
- * Heuristic auto-grouping: take the part of the filename before
- * common delimiters (offer/purchase/counter/POF/etc.) and use it as
- * the implied buyer. Files sharing that root land in the same package.
- * This intentionally avoids a network call so it runs instantly.
- */
-function inferBuyerKey(filename: string): string {
-  const stem = filename.replace(/\.[^./]+$/, '');
-  // Strip common doc-type tokens.
-  const stripped = stem
-    .replace(
-      /(purchase\s*agreement|offer|counter|pre[-\s]*approval|proof\s*of\s*funds|pof|disclosure[s]?|addendum|addenda|signed|final|draft|v\d+|\#\d+)/gi,
-      ' ',
-    )
-    .replace(/[_\-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  // Use first 2-3 meaningful words as buyer key; lowercased for grouping.
-  const words = stripped.split(' ').filter(w => w.length > 1).slice(0, 3);
-  const key = words.join(' ').toLowerCase();
-  return key || stem.toLowerCase();
-}
-
-function inferCategory(filename: string): DocCategory {
-  const f = filename.toLowerCase();
-  if (f.includes('seller counter')) return 'Seller Counter';
-  if (f.includes('buyer counter')) return 'Buyer Counter';
-  if (f.includes('counter')) return 'Seller Counter';
-  if (f.includes('pof') || f.includes('proof of funds')) return 'Proof of Funds';
-  if (f.includes('pre-approval') || f.includes('preapproval') || f.includes('pre approval'))
-    return 'Pre-Approval';
-  if (f.includes('income')) return 'Proof of Income';
-  if (f.includes('addend')) return 'Addenda';
-  if (f.includes('disclosure')) return 'Disclosures';
-  return 'Purchase Agreement';
-}
-
-function titleCase(s: string) {
-  return s.replace(/\b\w/g, c => c.toUpperCase());
-}
+// AI-confidence threshold above which an auto-grouping is shown as
+// "Auto-grouped" (green). Below it, the file is still pre-grouped but
+// flagged with a yellow "Needs review" badge so the agent verifies it.
+const AI_CONFIDENT = 0.7;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -127,6 +97,13 @@ export default function OfferIntake() {
   const [packages, setPackages] = useState<StagedPackage[]>([]);
   const [dragOverPkg, setDragOverPkg] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [grouping, setGrouping] = useState(false);
+  // Files queued for the manual "Which buyer?" modal because the AI
+  // could not place them confidently.
+  const [manualQueue, setManualQueue] = useState<string[]>([]); // file ids
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualNewName, setManualNewName] = useState('');
+  const [manualPkgId, setManualPkgId] = useState<string>('__new__');
   // Packages whose extraction returned at least one field below the
   // confidence threshold get queued here. The review dialog opens after
   // the batch finishes so the agent can correct them in one sweep.
