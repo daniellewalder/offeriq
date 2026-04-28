@@ -33,7 +33,8 @@ export type DocCategory = (typeof DOC_CATEGORIES)[number];
  * and we'd rather over-flag a counter than miss one.
  */
 export function inferCategory(filename: string): DocCategory {
-  const f = filename.toLowerCase();
+  // Normalize separators so `\b` works on names like "Johnson_offer_2.pdf".
+  const f = filename.toLowerCase().replace(/[_\-]+/g, " ");
 
   // 1. Counter offers — check before plain RPA, since counters often
   //    say "RPA counter" or "counter to purchase agreement".
