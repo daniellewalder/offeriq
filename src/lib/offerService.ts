@@ -530,3 +530,150 @@ export async function fetchLatestCounterStrategies(dealAnalysisId: string) {
   const latestVersion = data[0].version;
   return data.filter((r: any) => r.version === latestVersion);
 }
+
+// ─── Field Corrections (manual review of AI extraction) ───
+
+export interface FieldCorrection {
+  field_name: string;
+  field_value: any;
+  // The original confidence + evidence + source we want to preserve
+  // so the audit trail stays intact even after a human edit.
+  prior_confidence: number;
+  prior_evidence: string | null;
+  prior_source_document_name: string | null;
+  prior_source_document_id: string | null;
+  // True if the user changed this field; false means we just carry the
+  // prior extraction forward into the new version unchanged.
+  edited: boolean;
+}
+
+/**
+ * Persist manual field corrections from the review dialog.
+ * Creates a NEW version in extracted_offer_fields (insert-only table)
+ * and re-rolls the canonical offer columns so the rest of the app sees
+ * the corrected values.
+ */
+export async function saveFieldCorrections(
+  offerId: string,
+  offerName: string,
+  corrections: FieldCorrection[],
+) {
+  // Next version
+  const { data: latest } = await supabase
+    .from("extracted_offer_fields")
+    .select("version")
+    .eq("offer_id", offerId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextVersion = (latest?.version ?? 0) + 1;
+
+  // Carry forward summary fields (missing_items / notable_risks / notable_strengths)
+  // from the previous version so the comparison view doesn't lose them.
+  const priorVersion = latest?.version ?? null;
+  let summaryRows: any[] = [];
+  if (priorVersion !== null) {
+    const { data: prior } = await supabase
+      .from("extracted_offer_fields")
+      .select("*")
+      .eq("offer_id", offerId)
+      .eq("version", priorVersion)
+      .in("field_name", ["missing_items", "notable_risks", "notable_strengths"]);
+    summaryRows = (prior ?? []).map((r: any) => ({
+      offer_id: offerId,
+      field_name: r.field_name,
+      field_value: r.field_value,
+      confidence: r.confidence,
+      evidence: r.evidence,
+      source_document_id: r.source_document_id,
+      source_document_name: r.source_document_name,
+      version: nextVersion,
+    }));
+  }
+
+  const correctionRows = corrections.map((c) => ({
+    offer_id: offerId,
+    field_name: c.field_name,
+    field_value: c.field_value,
+    // If the user edited the field, lock confidence at 1.0 (human verified)
+    // and tag evidence so we can render a "Corrected by agent" pill.
+    confidence: c.edited ? 1 : c.prior_confidence,
+    evidence: c.edited
+      ? `Corrected by agent. Original AI evidence: ${c.prior_evidence ?? "(none)"}`
+      : c.prior_evidence,
+    source_document_id: c.prior_source_document_id,
+    source_document_name: c.edited
+      ? `${c.prior_source_document_name ?? "Manual entry"} (corrected)`
+      : c.prior_source_document_name,
+    version: nextVersion,
+  }));
+
+  const { error: insertErr } = await supabase
+    .from("extracted_offer_fields")
+    .insert([...correctionRows, ...summaryRows]);
+  if (insertErr) throw insertErr;
+
+  // Re-roll the canonical offer columns from the corrected map.
+  const m: Record<string, any> = {};
+  for (const c of correctionRows) {
+    if (c.field_value !== null && c.field_value !== undefined) m[c.field_name] = c.field_value;
+  }
+
+  const contingencies: string[] = [];
+  if (m.inspection_contingency_present) {
+    contingencies.push(
+      m.inspection_contingency_days
+        ? `Inspection (${m.inspection_contingency_days} days)`
+        : "Inspection",
+    );
+  }
+  if (m.appraisal_contingency_present) contingencies.push("Appraisal");
+  if (m.loan_contingency_present) contingencies.push("Loan");
+
+  const expected = [
+    "offer_price",
+    "financing_type",
+    "earnest_money_deposit",
+    "close_of_escrow_days",
+    "down_payment_percent",
+  ];
+  const completeness = Math.round(
+    (expected.filter((k) => m[k] !== undefined && m[k] !== null).length / expected.length) * 100,
+  );
+
+  const offerUpdate: Record<string, any> = {
+    buyer_name: m.buyer_name ?? offerName,
+    agent_name: m.agent_name ?? null,
+    agent_brokerage: m.agent_brokerage ?? null,
+    offer_price: typeof m.offer_price === "number" ? m.offer_price : null,
+    financing_type: m.financing_type ?? null,
+    down_payment: m.down_payment_amount ?? null,
+    down_payment_percent: m.down_payment_percent ?? null,
+    earnest_money: m.earnest_money_deposit ?? null,
+    close_days: m.close_of_escrow_days ?? null,
+    close_timeline: m.close_of_escrow_days ? `${m.close_of_escrow_days} days` : null,
+    inspection_period: m.inspection_contingency_days
+      ? `${m.inspection_contingency_days} days`
+      : null,
+    leaseback_request: m.leaseback_requested
+      ? m.leaseback_days
+        ? `${m.leaseback_days}-day leaseback`
+        : "Requested"
+      : "None",
+    concessions: m.concessions_requested ?? "None",
+    proof_of_funds: !!m.proof_of_funds_present,
+    pre_approval: !!m.preapproval_present,
+    contingencies,
+    completeness,
+    special_notes: m.special_notes ?? null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error: updateErr } = await supabase
+    .from("offers")
+    .update(offerUpdate as any)
+    .eq("id", offerId);
+  if (updateErr) throw updateErr;
+
+  return nextVersion;
+}

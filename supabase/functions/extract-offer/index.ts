@@ -565,6 +565,15 @@ Deno.serve(async (req: Request) => {
         notable_strengths,
         counter_chain: counterChain,
         counter_status: counterStatus,
+        // Per-field results so the client can show a review/correct UI
+        // for low-confidence fields without an extra round-trip.
+        fields: fields.map((f) => ({
+          field_name: f.field_name,
+          field_value: f.field_value,
+          confidence: f.confidence,
+          evidence: f.evidence,
+          source_document_name: f.source_document_name,
+        })),
         per_document_errors: parsed.filter((p) => p.error).map((p) => ({ name: p.name, error: p.error })),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },

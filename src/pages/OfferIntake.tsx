@@ -19,6 +19,9 @@ import {
   fetchAnalysisSummariesForUser,
   setStoredActiveAnalysisId,
 } from '@/lib/activeAnalysis';
+import ReviewExtractionDialog, {
+  type ReviewItem,
+} from '@/components/ReviewExtractionDialog';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -124,6 +127,11 @@ export default function OfferIntake() {
   const [packages, setPackages] = useState<StagedPackage[]>([]);
   const [dragOverPkg, setDragOverPkg] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  // Packages whose extraction returned at least one field below the
+  // confidence threshold get queued here. The review dialog opens after
+  // the batch finishes so the agent can correct them in one sweep.
+  const [reviewQueue, setReviewQueue] = useState<ReviewItem[]>([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   // ── Boot: resolve analysis context ──
   useEffect(() => {
@@ -304,6 +312,7 @@ export default function OfferIntake() {
 
     setRunning(true);
     let okCount = 0;
+    const collectedReviews: ReviewItem[] = [];
     for (const pkg of ready) {
       setPackages(prev => prev.map(p =>
         p.id === pkg.id ? { ...p, status: 'uploading', message: undefined } : p,
@@ -319,7 +328,24 @@ export default function OfferIntake() {
         setPackages(prev => prev.map(p =>
           p.id === pkg.id ? { ...p, status: 'extracting' } : p,
         ));
-        await triggerExtraction(offerId, pkg.name, docPayload);
+        const result = await triggerExtraction(offerId, pkg.name, docPayload);
+        // If the extractor returned per-field confidences and any of
+        // them are below 0.7, queue this package for manual review.
+        const fields: any[] = Array.isArray((result as any)?.fields) ? (result as any).fields : [];
+        const hasLowConfidence = fields.some((f) => Number(f.confidence ?? 0) < 0.7);
+        if (hasLowConfidence) {
+          collectedReviews.push({
+            offerId,
+            offerName: pkg.name,
+            fields: fields.map((f) => ({
+              field_name: f.field_name,
+              field_value: f.field_value,
+              confidence: Number(f.confidence ?? 0),
+              evidence: f.evidence ?? null,
+              source_document_name: f.source_document_name ?? null,
+            })),
+          });
+        }
         setPackages(prev => prev.map(p =>
           p.id === pkg.id ? { ...p, status: 'complete' } : p,
         ));
@@ -337,6 +363,17 @@ export default function OfferIntake() {
     setRunning(false);
 
     if (okCount > 0) {
+      // If anything needs review, open the dialog and let the user
+      // walk through it before we send them off to comparison.
+      if (collectedReviews.length > 0) {
+        setReviewQueue(collectedReviews);
+        setReviewOpen(true);
+        toast({
+          title: `Processed ${okCount} offer${okCount === 1 ? '' : 's'}`,
+          description: `${collectedReviews.length} need${collectedReviews.length === 1 ? 's' : ''} a quick review for low-confidence fields.`,
+        });
+        return;
+      }
       toast({
         title: `Processed ${okCount} offer${okCount === 1 ? '' : 's'}`,
         description: 'Opening comparison…',
@@ -348,6 +385,13 @@ export default function OfferIntake() {
         description: 'Check the errors and try again.',
         variant: 'destructive',
       });
+    }
+  };
+
+  const handleReviewClosed = () => {
+    setReviewOpen(false);
+    if (analysisId) {
+      setTimeout(() => navigate(`/comparison?analysis=${analysisId}`), 300);
     }
   };
 
@@ -410,6 +454,12 @@ export default function OfferIntake() {
   return (
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
+        <ReviewExtractionDialog
+          open={reviewOpen}
+          queue={reviewQueue}
+          onClose={handleReviewClosed}
+          onAllReviewed={handleReviewClosed}
+        />
         {/* Header */}
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
