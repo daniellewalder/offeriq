@@ -735,6 +735,13 @@ export default function OfferIntake() {
           </div>
         </div>
 
+        {/* Claude-powered uploader (parallel extraction) */}
+        <OfferUploader
+          onComplete={(offers) => {
+            console.log('[OfferUploader] extracted offers:', offers);
+          }}
+        />
+
         {/* Unassigned tray */}
         <PackageBin
           title={`Unassigned files (${unassigned.length})`}
