@@ -196,7 +196,12 @@ export default function OfferIntake() {
   };
 
   const moveFileToPackage = (fileId: string, packageId: string | null) => {
-    setFiles(prev => prev.map(f => f.id === fileId ? { ...f, packageId } : f));
+    // A drag-and-drop move counts as a manual confirmation: the agent
+    // explicitly placed the file, so we clear any "Needs review" badge.
+    setFiles(prev => prev.map(f => f.id === fileId
+      ? { ...f, packageId, groupingSource: packageId === null ? 'none' : 'manual', groupingConfidence: packageId === null ? 0 : 1 }
+      : f,
+    ));
   };
 
   const addPackage = (name?: string) => {
@@ -640,10 +645,14 @@ export default function OfferIntake() {
             <div className="flex items-center gap-2">
               <button
                 onClick={autoGroup}
-                disabled={unassigned.length === 0 || running}
+                disabled={unassigned.length === 0 || running || grouping}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-border text-[12px] font-body font-medium text-foreground hover:border-accent/40 hover:bg-accent/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Wand2 className="w-3.5 h-3.5" /> Auto-group by buyer
+                {grouping ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Reading PDFs…</>
+                ) : (
+                  <><Wand2 className="w-3.5 h-3.5" /> Auto-group by buyer</>
+                )}
               </button>
               <button
                 onClick={() => addPackage()}
