@@ -1,7 +1,7 @@
 import AppLayout from '@/components/AppLayout';
 import {
   CheckCircle, AlertCircle, FileText, Upload, Plus, X, Sparkles,
-  Loader2, ArrowRight, Wand2, Trash2, Folder,
+  Loader2, ArrowRight, Wand2, Trash2, Folder, HelpCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
@@ -22,21 +22,23 @@ import {
 import ReviewExtractionDialog, {
   type ReviewItem,
 } from '@/components/ReviewExtractionDialog';
+import {
+  DOC_CATEGORIES,
+  type DocCategory,
+  inferCategory,
+  inferBuyerKey,
+  titleCaseBuyerKey,
+} from '@/lib/intakeHeuristics';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-const DOC_CATEGORIES = [
-  'Purchase Agreement',
-  'Seller Counter',
-  'Buyer Counter',
-  'Proof of Funds',
-  'Pre-Approval',
-  'Proof of Income',
-  'Addenda',
-  'Disclosures',
-  'Other',
-] as const;
-type DocCategory = typeof DOC_CATEGORIES[number];
 
 interface StagedFile {
   id: string;
@@ -44,6 +46,10 @@ interface StagedFile {
   category: DocCategory;
   // Which package this file is currently assigned to. `null` = unassigned (sitting in the staging tray).
   packageId: string | null;
+  // Where the current packageId came from, so we can show "Auto-grouped"
+  // (green) vs "Needs review" (yellow) badges in the staging tray.
+  groupingSource?: 'ai' | 'filename' | 'manual' | 'none';
+  groupingConfidence?: number; // 0..1, only meaningful when groupingSource === 'ai'
 }
 
 interface StagedPackage {
@@ -66,46 +72,10 @@ interface AnalysisSummary {
 const newId = (p: string) =>
   `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-/**
- * Heuristic auto-grouping: take the part of the filename before
- * common delimiters (offer/purchase/counter/POF/etc.) and use it as
- * the implied buyer. Files sharing that root land in the same package.
- * This intentionally avoids a network call so it runs instantly.
- */
-function inferBuyerKey(filename: string): string {
-  const stem = filename.replace(/\.[^./]+$/, '');
-  // Strip common doc-type tokens.
-  const stripped = stem
-    .replace(
-      /(purchase\s*agreement|offer|counter|pre[-\s]*approval|proof\s*of\s*funds|pof|disclosure[s]?|addendum|addenda|signed|final|draft|v\d+|\#\d+)/gi,
-      ' ',
-    )
-    .replace(/[_\-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  // Use first 2-3 meaningful words as buyer key; lowercased for grouping.
-  const words = stripped.split(' ').filter(w => w.length > 1).slice(0, 3);
-  const key = words.join(' ').toLowerCase();
-  return key || stem.toLowerCase();
-}
-
-function inferCategory(filename: string): DocCategory {
-  const f = filename.toLowerCase();
-  if (f.includes('seller counter')) return 'Seller Counter';
-  if (f.includes('buyer counter')) return 'Buyer Counter';
-  if (f.includes('counter')) return 'Seller Counter';
-  if (f.includes('pof') || f.includes('proof of funds')) return 'Proof of Funds';
-  if (f.includes('pre-approval') || f.includes('preapproval') || f.includes('pre approval'))
-    return 'Pre-Approval';
-  if (f.includes('income')) return 'Proof of Income';
-  if (f.includes('addend')) return 'Addenda';
-  if (f.includes('disclosure')) return 'Disclosures';
-  return 'Purchase Agreement';
-}
-
-function titleCase(s: string) {
-  return s.replace(/\b\w/g, c => c.toUpperCase());
-}
+// AI-confidence threshold above which an auto-grouping is shown as
+// "Auto-grouped" (green). Below it, the file is still pre-grouped but
+// flagged with a yellow "Needs review" badge so the agent verifies it.
+const AI_CONFIDENT = 0.7;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -127,6 +97,13 @@ export default function OfferIntake() {
   const [packages, setPackages] = useState<StagedPackage[]>([]);
   const [dragOverPkg, setDragOverPkg] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [grouping, setGrouping] = useState(false);
+  // Files queued for the manual "Which buyer?" modal because the AI
+  // could not place them confidently.
+  const [manualQueue, setManualQueue] = useState<string[]>([]); // file ids
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualNewName, setManualNewName] = useState('');
+  const [manualPkgId, setManualPkgId] = useState<string>('__new__');
   // Packages whose extraction returned at least one field below the
   // confidence threshold get queued here. The review dialog opens after
   // the batch finishes so the agent can correct them in one sweep.
@@ -204,6 +181,8 @@ export default function OfferIntake() {
       file: f,
       category: inferCategory(f.name),
       packageId: null,
+      groupingSource: 'none',
+      groupingConfidence: 0,
     }));
     setFiles(prev => [...prev, ...staged]);
   };
@@ -217,7 +196,12 @@ export default function OfferIntake() {
   };
 
   const moveFileToPackage = (fileId: string, packageId: string | null) => {
-    setFiles(prev => prev.map(f => f.id === fileId ? { ...f, packageId } : f));
+    // A drag-and-drop move counts as a manual confirmation: the agent
+    // explicitly placed the file, so we clear any "Needs review" badge.
+    setFiles(prev => prev.map(f => f.id === fileId
+      ? { ...f, packageId, groupingSource: packageId === null ? 'none' : 'manual', groupingConfidence: packageId === null ? 0 : 1 }
+      : f,
+    ));
   };
 
   const addPackage = (name?: string) => {
@@ -238,45 +222,187 @@ export default function OfferIntake() {
     setPackages(prev => prev.filter(p => p.id !== id));
   };
 
-  const autoGroup = () => {
+  /**
+   * Smart auto-group: send the unassigned files to the classify-documents
+   * edge function, which reads the PDF text and identifies the buyer per
+   * file. Files that come back with confidence >= AI_CONFIDENT are placed
+   * into packages keyed by the buyer name. Lower-confidence files are
+   * pre-placed using the filename heuristic but flagged "Needs review",
+   * and any file the AI couldn't classify at all gets queued for the
+   * manual "Which buyer?" modal.
+   */
+  const autoGroup = async () => {
     if (files.length === 0) {
       toast({ title: 'Add some files first', description: 'Drop PDFs into the tray, then auto-group.' });
       return;
     }
-    // Group unassigned files by inferred buyer key.
-    const groups = new Map<string, StagedFile[]>();
-    for (const f of files) {
-      if (f.packageId !== null) continue;
-      const key = inferBuyerKey(f.file.name);
-      const arr = groups.get(key) ?? [];
-      arr.push(f);
-      groups.set(key, arr);
-    }
-    if (groups.size === 0) {
+    const unassignedFiles = files.filter(f => f.packageId === null);
+    if (unassignedFiles.length === 0) {
       toast({ title: 'Nothing to group', description: 'All files are already assigned to a package.' });
       return;
     }
 
+    setGrouping(true);
+    // Per-file AI verdicts, defaulted to "no result". We update them as
+    // soon as the edge function returns; if it fails we keep these
+    // defaults and fall back to the filename heuristic for everything.
+    let verdicts = new Map<string, { buyer: string | null; confidence: number }>(
+      unassignedFiles.map(f => [f.id, { buyer: null, confidence: 0 }]),
+    );
+
+    try {
+      const fd = new FormData();
+      for (const sf of unassignedFiles) fd.append('files', sf.file, sf.file.name);
+      const { data, error } = await supabase.functions.invoke('classify-documents', { body: fd });
+      if (error) throw error;
+      const results: Array<{ filename: string; buyer_name: string | null; confidence: number }> =
+        Array.isArray((data as any)?.results) ? (data as any).results : [];
+      // Match results back to staged files by filename. Multiple files can
+      // share a name in theory, so we pop matches off as we go.
+      const remaining = [...results];
+      for (const sf of unassignedFiles) {
+        const idx = remaining.findIndex(r => r.filename === sf.file.name);
+        if (idx >= 0) {
+          const r = remaining.splice(idx, 1)[0];
+          verdicts.set(sf.id, { buyer: r.buyer_name, confidence: Number(r.confidence) || 0 });
+        }
+      }
+    } catch (e: any) {
+      console.warn('classify-documents failed, falling back to filename heuristic', e);
+      toast({
+        title: 'AI classifier unavailable',
+        description: 'Grouping by filename instead — please double-check the packages.',
+      });
+    }
+
+    // Bucket files by the chosen grouping key.
+    //  - If AI returned a buyer with confidence >= AI_CONFIDENT, that's the key.
+    //  - If AI returned a buyer below the threshold, still group on it but
+    //    mark the file as "needs review".
+    //  - If AI returned nothing, fall back to the filename heuristic AND
+    //    queue the file for the manual modal so the agent confirms.
+    type Bucket = {
+      key: string;
+      displayName: string;
+      members: { id: string; source: 'ai' | 'filename'; confidence: number }[];
+    };
+    const buckets = new Map<string, Bucket>();
+    const needsManual: string[] = [];
+
+    for (const sf of unassignedFiles) {
+      const v = verdicts.get(sf.id) ?? { buyer: null, confidence: 0 };
+      let key: string;
+      let displayName: string;
+      let source: 'ai' | 'filename';
+      let confidence = v.confidence;
+
+      if (v.buyer && v.buyer.trim().length > 0) {
+        key = v.buyer.trim().toLowerCase();
+        displayName = titleCaseBuyerKey(v.buyer.trim());
+        source = 'ai';
+      } else {
+        const k = inferBuyerKey(sf.file.name);
+        key = k;
+        displayName = titleCaseBuyerKey(k) || sf.file.name.replace(/\.[^./]+$/, '');
+        source = 'filename';
+        confidence = 0;
+        needsManual.push(sf.id);
+      }
+
+      const bucket = buckets.get(key) ?? { key, displayName, members: [] };
+      bucket.members.push({ id: sf.id, source, confidence });
+      buckets.set(key, bucket);
+    }
+
+    // Materialize buckets into packages.
     const newPackages: StagedPackage[] = [];
-    const fileUpdates = new Map<string, string>(); // fileId -> packageId
+    const fileUpdates = new Map<string, { pkgId: string; source: 'ai' | 'filename'; confidence: number }>();
     let i = packages.length;
-    for (const [key, group] of groups.entries()) {
+    for (const bucket of buckets.values()) {
       i += 1;
       const pkg: StagedPackage = {
         id: newId('pkg'),
-        name: titleCase(key) || `Offer ${i}`,
+        name: bucket.displayName || `Offer ${i}`,
         status: 'idle',
       };
       newPackages.push(pkg);
-      for (const f of group) fileUpdates.set(f.id, pkg.id);
+      for (const m of bucket.members) {
+        fileUpdates.set(m.id, { pkgId: pkg.id, source: m.source, confidence: m.confidence });
+      }
     }
 
     setPackages(prev => [...prev, ...newPackages]);
-    setFiles(prev => prev.map(f => fileUpdates.has(f.id) ? { ...f, packageId: fileUpdates.get(f.id)! } : f));
+    setFiles(prev => prev.map(f => {
+      const u = fileUpdates.get(f.id);
+      if (!u) return f;
+      return { ...f, packageId: u.pkgId, groupingSource: u.source, groupingConfidence: u.confidence };
+    }));
+    setGrouping(false);
+
+    if (needsManual.length > 0) {
+      // Open the modal for the first uncertain file; the user can pick
+      // a package or create a new one. We then advance through the queue.
+      setManualQueue(needsManual);
+      setManualPkgId('__new__');
+      setManualNewName('');
+      setManualOpen(true);
+    }
+
     toast({
       title: `Created ${newPackages.length} package${newPackages.length === 1 ? '' : 's'}`,
-      description: 'Drag files between packages to fix any misgroupings.',
+      description: needsManual.length > 0
+        ? `${needsManual.length} file${needsManual.length === 1 ? ' needs' : 's need'} a quick review.`
+        : 'Drag files between packages to fix any misgroupings.',
     });
+  };
+
+  // ── Manual "which buyer?" modal queue ──
+  const currentManualFile = useMemo(() => {
+    const id = manualQueue[0];
+    return id ? files.find(f => f.id === id) ?? null : null;
+  }, [manualQueue, files]);
+
+  const advanceManualQueue = () => {
+    setManualQueue(q => q.slice(1));
+    setManualPkgId('__new__');
+    setManualNewName('');
+  };
+
+  const closeManualModal = () => {
+    setManualOpen(false);
+    setManualQueue([]);
+  };
+
+  const submitManualAssignment = () => {
+    const file = currentManualFile;
+    if (!file) { closeManualModal(); return; }
+    let pkgId = manualPkgId;
+    if (pkgId === '__new__') {
+      const name = manualNewName.trim() || `Offer ${packages.length + 1}`;
+      pkgId = newId('pkg');
+      setPackages(prev => [...prev, { id: pkgId, name, status: 'idle' }]);
+    }
+    setFiles(prev => prev.map(f =>
+      f.id === file.id
+        ? { ...f, packageId: pkgId, groupingSource: 'manual', groupingConfidence: 1 }
+        : f,
+    ));
+    if (manualQueue.length <= 1) {
+      setManualOpen(false);
+      setManualQueue([]);
+    } else {
+      advanceManualQueue();
+    }
+  };
+
+  const skipManualAssignment = () => {
+    // Leave file in its (uncertain) auto-grouping; just move on.
+    if (manualQueue.length <= 1) {
+      setManualOpen(false);
+      setManualQueue([]);
+    } else {
+      advanceManualQueue();
+    }
   };
 
   // ── Drag & drop between packages ──
@@ -460,6 +586,64 @@ export default function OfferIntake() {
           onClose={handleReviewClosed}
           onAllReviewed={handleReviewClosed}
         />
+        {/* Manual buyer-assignment modal: appears when the AI classifier
+            could not identify a buyer with high confidence for a file. */}
+        <Dialog open={manualOpen} onOpenChange={(o) => { if (!o) closeManualModal(); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Which buyer does this document belong to?</DialogTitle>
+              <DialogDescription>
+                We couldn't tell from the document content. Pick an existing package or create a new one.
+              </DialogDescription>
+            </DialogHeader>
+            {currentManualFile && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 p-3 rounded-md border border-border bg-muted/30">
+                  <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" strokeWidth={1.5} />
+                  <p className="text-[12px] font-body text-foreground truncate" title={currentManualFile.file.name}>
+                    {currentManualFile.file.name}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground font-body">
+                    Assign to
+                  </label>
+                  <Select value={manualPkgId} onValueChange={setManualPkgId}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__new__">+ New buyer / package</SelectItem>
+                      {packages.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {manualPkgId === '__new__' && (
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground font-body">
+                      New package name
+                    </label>
+                    <Input
+                      value={manualNewName}
+                      onChange={(e) => setManualNewName(e.target.value)}
+                      placeholder="e.g. Smith offer"
+                      autoFocus
+                    />
+                  </div>
+                )}
+                {manualQueue.length > 1 && (
+                  <p className="text-[11px] text-muted-foreground font-body">
+                    {manualQueue.length - 1} more file{manualQueue.length - 1 === 1 ? '' : 's'} after this.
+                  </p>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="ghost" onClick={skipManualAssignment}>Skip</Button>
+              <Button onClick={submitManualAssignment}>Assign</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         {/* Header */}
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
@@ -519,10 +703,14 @@ export default function OfferIntake() {
             <div className="flex items-center gap-2">
               <button
                 onClick={autoGroup}
-                disabled={unassigned.length === 0 || running}
+                disabled={unassigned.length === 0 || running || grouping}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-border text-[12px] font-body font-medium text-foreground hover:border-accent/40 hover:bg-accent/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Wand2 className="w-3.5 h-3.5" /> Auto-group by buyer
+                {grouping ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Reading PDFs…</>
+                ) : (
+                  <><Wand2 className="w-3.5 h-3.5" /> Auto-group by buyer</>
+                )}
               </button>
               <button
                 onClick={() => addPackage()}
@@ -742,6 +930,7 @@ function FileChip({ file, onCategoryChange, onRemove, onDragStart, disabled }: F
       <p className="flex-1 min-w-0 text-[12px] font-body text-foreground truncate" title={file.file.name}>
         {file.file.name}
       </p>
+      <GroupingBadge file={file} />
       <select
         value={file.category}
         onChange={e => onCategoryChange(e.target.value as DocCategory)}
@@ -759,5 +948,39 @@ function FileChip({ file, onCategoryChange, onRemove, onDragStart, disabled }: F
         <X className="w-3.5 h-3.5" />
       </button>
     </div>
+  );
+}
+
+/**
+ * Per-file confidence badge shown next to its name in the staging tray.
+ *  - "Auto-grouped" (green) when the AI placed the file with confidence >= AI_CONFIDENT
+ *  - "Needs review" (yellow) when the AI was unsure or we fell back to a filename heuristic
+ *  - "Confirmed" (subtle) after the agent manually placed/moved it
+ *  - Nothing for files still sitting in the unassigned tray
+ */
+function GroupingBadge({ file }: { file: StagedFile }) {
+  if (file.packageId === null || !file.groupingSource || file.groupingSource === 'none') return null;
+  if (file.groupingSource === 'manual') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-body bg-muted text-muted-foreground" title="You placed this file manually.">
+        <CheckCircle className="w-2.5 h-2.5" /> Confirmed
+      </span>
+    );
+  }
+  if (file.groupingSource === 'ai' && (file.groupingConfidence ?? 0) >= AI_CONFIDENT) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-body bg-success/15 text-success" title={`AI confidence ${(Math.round((file.groupingConfidence ?? 0) * 100))}%`}>
+        <CheckCircle className="w-2.5 h-2.5" /> Auto-grouped
+      </span>
+    );
+  }
+  // Filename fallback or low-confidence AI = needs review
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-body bg-warning/15 text-warning"
+      title="Verify this file is in the right package."
+    >
+      <HelpCircle className="w-2.5 h-2.5" /> Needs review
+    </span>
   );
 }
