@@ -671,7 +671,7 @@ export async function saveFieldCorrections(
 
   const { error: updateErr } = await supabase
     .from("offers")
-    .update(offerUpdate)
+    .update(offerUpdate as any)
     .eq("id", offerId);
   if (updateErr) throw updateErr;
 
