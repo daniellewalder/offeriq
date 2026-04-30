@@ -180,6 +180,54 @@ export default function OfferIntake() {
     setNeedsPicker(false);
   };
 
+  // ── Inline listing-price edit ──
+  const startEditingPrice = () => {
+    setPriceDraft(listingPrice != null ? String(Math.round(listingPrice)) : '');
+    setEditingPrice(true);
+  };
+  const cancelEditingPrice = () => {
+    setEditingPrice(false);
+    setPriceDraft('');
+  };
+  const saveListingPrice = async () => {
+    if (!propertyId) return;
+    const trimmed = priceDraft.trim();
+    let nextValue: number | null = null;
+    if (trimmed !== '') {
+      const digits = trimmed.replace(/[^0-9]/g, '');
+      if (!digits) {
+        toast({ title: 'Enter a valid price', variant: 'destructive' });
+        return;
+      }
+      const parsed = Number(digits);
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 999_999_999) {
+        toast({ title: 'Price must be between $0 and $999,999,999', variant: 'destructive' });
+        return;
+      }
+      nextValue = parsed;
+    }
+    const previous = listingPrice;
+    setListingPrice(nextValue); // optimistic
+    setSavingPrice(true);
+    const { error } = await supabase
+      .from('properties')
+      .update({ listing_price: nextValue })
+      .eq('id', propertyId);
+    setSavingPrice(false);
+    if (error) {
+      setListingPrice(previous);
+      toast({ title: 'Could not save listing price', description: error.message, variant: 'destructive' });
+      return;
+    }
+    // Keep the picker summaries in sync
+    setAnalysisOptions(opts =>
+      opts.map(o => (o.id === analysisId ? { ...o, listingPrice: nextValue } : o)),
+    );
+    setEditingPrice(false);
+    setPriceDraft('');
+    toast({ title: 'Listing price updated' });
+  };
+
   // ── Staging actions ──
   const addFiles = (incoming: FileList | File[] | null) => {
     if (!incoming) return;
