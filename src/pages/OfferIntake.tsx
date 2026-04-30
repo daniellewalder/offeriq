@@ -1,7 +1,7 @@
 import AppLayout from '@/components/AppLayout';
 import {
   CheckCircle, AlertCircle, FileText, Upload, Plus, X, Sparkles,
-  Loader2, ArrowRight, Wand2, Trash2, Folder, HelpCircle,
+  Loader2, ArrowRight, Wand2, Trash2, Folder, HelpCircle, Pencil, Check,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
@@ -89,6 +89,11 @@ export default function OfferIntake() {
   // Active analysis context
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [analysisLabel, setAnalysisLabel] = useState<string>('');
+  const [propertyId, setPropertyId] = useState<string | null>(null);
+  const [listingPrice, setListingPrice] = useState<number | null>(null);
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [priceDraft, setPriceDraft] = useState<string>('');
+  const [savingPrice, setSavingPrice] = useState(false);
   const [analysisOptions, setAnalysisOptions] = useState<AnalysisSummary[]>([]);
   const [needsPicker, setNeedsPicker] = useState(false);
   const [bootLoading, setBootLoading] = useState(true);
@@ -158,6 +163,9 @@ export default function OfferIntake() {
       setAnalysisLabel(
         (analysis as any)?.properties?.address || (analysis as any)?.name || 'Active deal',
       );
+      setPropertyId((analysis as any)?.property_id ?? null);
+      const lp = (analysis as any)?.properties?.listing_price;
+      setListingPrice(lp === null || lp === undefined ? null : Number(lp));
       setStoredActiveAnalysisId(id);
       setBootLoading(false);
     })();
@@ -170,6 +178,54 @@ export default function OfferIntake() {
     next.set('analysis', id);
     setSearchParams(next, { replace: true });
     setNeedsPicker(false);
+  };
+
+  // ── Inline listing-price edit ──
+  const startEditingPrice = () => {
+    setPriceDraft(listingPrice != null ? String(Math.round(listingPrice)) : '');
+    setEditingPrice(true);
+  };
+  const cancelEditingPrice = () => {
+    setEditingPrice(false);
+    setPriceDraft('');
+  };
+  const saveListingPrice = async () => {
+    if (!propertyId) return;
+    const trimmed = priceDraft.trim();
+    let nextValue: number | null = null;
+    if (trimmed !== '') {
+      const digits = trimmed.replace(/[^0-9]/g, '');
+      if (!digits) {
+        toast({ title: 'Enter a valid price', variant: 'destructive' });
+        return;
+      }
+      const parsed = Number(digits);
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 999_999_999) {
+        toast({ title: 'Price must be between $0 and $999,999,999', variant: 'destructive' });
+        return;
+      }
+      nextValue = parsed;
+    }
+    const previous = listingPrice;
+    setListingPrice(nextValue); // optimistic
+    setSavingPrice(true);
+    const { error } = await supabase
+      .from('properties')
+      .update({ listing_price: nextValue })
+      .eq('id', propertyId);
+    setSavingPrice(false);
+    if (error) {
+      setListingPrice(previous);
+      toast({ title: 'Could not save listing price', description: error.message, variant: 'destructive' });
+      return;
+    }
+    // Keep the picker summaries in sync
+    setAnalysisOptions(opts =>
+      opts.map(o => (o.id === analysisId ? { ...o, listingPrice: nextValue } : o)),
+    );
+    setEditingPrice(false);
+    setPriceDraft('');
+    toast({ title: 'Listing price updated' });
   };
 
   // ── Staging actions ──
@@ -664,6 +720,52 @@ export default function OfferIntake() {
                   className="text-[11px] text-muted-foreground hover:text-accent transition-colors font-body underline-offset-4 hover:underline"
                 >
                   change
+                </button>
+              )}
+            </div>
+            {/* Inline editable Listing price */}
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body">
+                Listed at
+              </span>
+              {editingPrice ? (
+                <div className="flex items-center gap-1">
+                  <span className="text-[13px] text-muted-foreground font-body">$</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoFocus
+                    value={priceDraft}
+                    onChange={(e) => setPriceDraft(e.target.value.replace(/[^0-9]/g, '').slice(0, 9))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); saveListingPrice(); }
+                      else if (e.key === 'Escape') { e.preventDefault(); cancelEditingPrice(); }
+                    }}
+                    onBlur={() => { if (!savingPrice) saveListingPrice(); }}
+                    disabled={savingPrice}
+                    placeholder="e.g. 8750000"
+                    className="w-32 bg-transparent border-b border-accent/60 focus:border-accent outline-none text-[13px] font-body font-medium text-foreground text-right tabular-nums"
+                  />
+                  {savingPrice ? (
+                    <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Check className="w-3 h-3 text-accent" />
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startEditingPrice}
+                  disabled={!propertyId}
+                  className="group inline-flex items-center gap-1.5 text-[13px] font-body font-medium text-foreground hover:text-accent transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  title={propertyId ? 'Edit listing price' : 'No property linked'}
+                >
+                  <span className="tabular-nums">
+                    {listingPrice != null
+                      ? `$${listingPrice.toLocaleString()}`
+                      : 'Set price'}
+                  </span>
+                  <Pencil className="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity" />
                 </button>
               )}
             </div>
