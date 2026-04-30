@@ -1,7 +1,7 @@
 import AppLayout from '@/components/AppLayout';
 import {
   CheckCircle, AlertCircle, FileText, Upload, Plus, X, Sparkles,
-  Loader2, ArrowRight, Wand2, Trash2, Folder, HelpCircle,
+  Loader2, ArrowRight, Wand2, Trash2, Folder, HelpCircle, Pencil, Check,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
@@ -89,6 +89,11 @@ export default function OfferIntake() {
   // Active analysis context
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [analysisLabel, setAnalysisLabel] = useState<string>('');
+  const [propertyId, setPropertyId] = useState<string | null>(null);
+  const [listingPrice, setListingPrice] = useState<number | null>(null);
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [priceDraft, setPriceDraft] = useState<string>('');
+  const [savingPrice, setSavingPrice] = useState(false);
   const [analysisOptions, setAnalysisOptions] = useState<AnalysisSummary[]>([]);
   const [needsPicker, setNeedsPicker] = useState(false);
   const [bootLoading, setBootLoading] = useState(true);
@@ -158,6 +163,9 @@ export default function OfferIntake() {
       setAnalysisLabel(
         (analysis as any)?.properties?.address || (analysis as any)?.name || 'Active deal',
       );
+      setPropertyId((analysis as any)?.property_id ?? null);
+      const lp = (analysis as any)?.properties?.listing_price;
+      setListingPrice(lp === null || lp === undefined ? null : Number(lp));
       setStoredActiveAnalysisId(id);
       setBootLoading(false);
     })();
