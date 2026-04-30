@@ -1,55 +1,44 @@
-## What's actually wrong
+## Goal
 
-You uploaded **two different documents** for 2339 Lyric:
-1. `2339 Lyric.pdf` — the **buyer's original offer** ($2,235,000)
-2. `Seller Counter Offer #1 - 1225.pdf` — **your counter** ($2,475,000)
+Add an inline-editable **Listing price** next to the listing name in the Offer Intake header. Edits write straight to `properties.listing_price` for the currently active deal.
 
-Both PDFs got attached to the **same single offer record** in the database, and the extraction model picked the most recent price it saw — $2,475,000 — overwriting the original. So the system has no idea there was a negotiation. From the database's point of view there is just one offer at $2,475,000, which is why the AI says "Buyer accepted the seller's counter price." It's not making it up — it literally cannot see the original $2,235,000 anywhere.
+## Why this is small
 
-This will keep happening on every deal until counters are tracked separately.
+The whole downstream stack already reads `properties.listing_price`:
 
-## The fix
+- **Comparison** page — already shows "Listed at $X" and per-offer price delta (`Comparison.tsx:270`, `:343`).
+- **AI Strategist** (`compare-offers` edge function) — already receives `property.listingPrice` in its prompt (`index.ts:35`).
+- **Shared portal** — `portalService.ts` already reads `listing_price` and propagates it.
+- **Counter Strategy / Leverage / Recommendation / Seller Report** engines all consume `listingPrice`.
 
-Treat counters as their own document type with their own price, and compare original-vs-counter instead of overwriting.
+So once the value is editable on Intake and saved to the database, *all of the above* are already covered. No other UI changes are needed for this request.
 
-### 1. Add counter-specific document categories (intake)
-In `OfferIntake.tsx`, expand `DOC_CATEGORIES`:
-- `Purchase Agreement` (buyer's original offer)
-- `Seller Counter` (counters issued by seller)
-- `Buyer Counter` (counters issued by buyer)
-- existing: Proof of Funds, Pre-Approval, Proof of Income, Addenda, Disclosures, Other
+## What I'll change
 
-When the user uploads, they tag each PDF with the right category — same UX as today, just more accurate options.
+### 1. `src/pages/OfferIntake.tsx` — header edit UI
+- Track `listingPrice` in component state (alongside `analysisLabel`), seeded from the loaded analysis.
+- Replace the right-hand "Uploading into" block with two stacked rows:
+  - Listing name (existing)
+  - **Listed at $X,XXX,XXX** with a pencil icon → click swaps it for an inline number input, blur/Enter saves, Esc cancels.
+- On save: optimistic UI update + toast on error (rollback). Validate as a positive integer ≤ $999,999,999.
+- Refresh the in-memory `analysisOptions` entry too so the picker stays accurate.
 
-### 2. Track counters as a versioned negotiation, not a price overwrite
-Add a `counters` JSONB column on `offers` (or a small `offer_counters` table) so each counter is a separate row with: who issued it (seller/buyer), price, terms changed, source document. The original `offer_price` field stays as the **buyer's original offer price** and never gets overwritten.
+### 2. `src/lib/dealsDashboardService.ts` (or a new tiny helper in `offerService.ts`)
+- Add `updatePropertyListingPrice(userId, propertyId, price)` — single `UPDATE properties SET listing_price = $1 WHERE id = $2 AND user_id = $3`. RLS already enforces ownership, but the explicit `user_id` filter is belt-and-suspenders.
 
-### 3. Update the extract-offer edge function
-- When documents in the package include a `Seller Counter` or `Buyer Counter` category, extract their price/terms into the `counters` array, not into the top-level offer fields.
-- Add a new field in the extraction schema: `counter_chain` — an ordered list of `{party, price, key_changes, source_document}`.
-- Update the system prompt to explicitly say: "If you see a counter-offer document, do NOT overwrite the original offer price. Record it as a separate counter in the negotiation history."
+### 3. `src/lib/activeAnalysis.ts` — lookup helper
+- Make `fetchAnalysisById` return the `property_id` (it likely already does via `properties(*)`; just need to expose it). Used so the intake page knows which property row to update.
 
-### 4. Show the negotiation in the Comparison view
-On the offer card and in the AI Strategist panel, render the chain like:
-```text
-Buyer offer:    $2,235,000
-Seller counter: $2,475,000  (you, +$240k, added 3-mo $1 leaseback)
-Status:         Awaiting buyer response
-```
+## What I'm explicitly NOT doing (because already done)
 
-### 5. Update the AI Strategist prompt (compare-offers function)
-Pass the `counter_chain` into the analysis so it reasons about *the live negotiation*, not a fictional accepted deal. Strategy output becomes things like "buyer is unlikely to accept a $240k bump + free leaseback — consider…" instead of "buyer accepted."
+- Showing "% of ask" on Comparison cards → already shown as price delta.
+- Passing listing price to AI Strategist → already passed.
+- Showing in shared portal → already shown.
 
-### 6. Clean up the existing bad record
-The current 2339 Lyric offer (id `6b0a0154…`) has the wrong $2,475,000 as offer_price. After the schema change, re-run extraction on this offer so it splits properly into original ($2,235,000) + seller counter ($2,475,000 + leaseback).
+If you'd rather see "% of ask" as a separate badge on Comparison cards (e.g. `+2.3% over ask`), say the word and I'll add that as a follow-up — but it's a separate visual tweak, not a wiring change.
 
-## Files touched
-- `supabase/functions/extract-offer/index.ts` — new fields, updated prompt, counter handling
-- `supabase/functions/compare-offers/index.ts` — accept and reason over `counter_chain`
-- new migration — add `counters` column (or table) + backfill
-- `src/pages/OfferIntake.tsx` — new categories, show counter chain in preview
-- `src/pages/Comparison.tsx` — render negotiation history on offer cards + pass to strategist
-- `src/lib/offerService.ts` — types + helpers for counters
+## Validation
 
-## What you'll see after
-Upload buyer offer + your counter → system shows two distinct prices, the strategist treats it as an active negotiation, and "Buyer accepted" never appears unless you actually upload a signed acceptance.
+- Number input: digits only, max 9 digits, no negatives.
+- Empty → treated as "clear" (sets to NULL, downstream code already handles null).
+- Optimistic update reverts on Supabase error with a toast.
