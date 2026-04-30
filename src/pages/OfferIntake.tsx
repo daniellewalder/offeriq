@@ -723,6 +723,52 @@ export default function OfferIntake() {
                 </button>
               )}
             </div>
+            {/* Inline editable Listing price */}
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] tracking-[0.15em] uppercase text-muted-foreground font-body">
+                Listed at
+              </span>
+              {editingPrice ? (
+                <div className="flex items-center gap-1">
+                  <span className="text-[13px] text-muted-foreground font-body">$</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoFocus
+                    value={priceDraft}
+                    onChange={(e) => setPriceDraft(e.target.value.replace(/[^0-9]/g, '').slice(0, 9))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); saveListingPrice(); }
+                      else if (e.key === 'Escape') { e.preventDefault(); cancelEditingPrice(); }
+                    }}
+                    onBlur={() => { if (!savingPrice) saveListingPrice(); }}
+                    disabled={savingPrice}
+                    placeholder="e.g. 8750000"
+                    className="w-32 bg-transparent border-b border-accent/60 focus:border-accent outline-none text-[13px] font-body font-medium text-foreground text-right tabular-nums"
+                  />
+                  {savingPrice ? (
+                    <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Check className="w-3 h-3 text-accent" />
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startEditingPrice}
+                  disabled={!propertyId}
+                  className="group inline-flex items-center gap-1.5 text-[13px] font-body font-medium text-foreground hover:text-accent transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  title={propertyId ? 'Edit listing price' : 'No property linked'}
+                >
+                  <span className="tabular-nums">
+                    {listingPrice != null
+                      ? `$${listingPrice.toLocaleString()}`
+                      : 'Set price'}
+                  </span>
+                  <Pencil className="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
