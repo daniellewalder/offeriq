@@ -185,7 +185,7 @@ function buildMaximizePrice(ctx: BuildContext, target?: Offer): CounterStrategy 
     close_timeline: `${target.closeDays || 30} days`,
     close_days: target.closeDays || 30,
     contingency_changes: contingencyChanges,
-    leaseback_terms: hasLeasebackRequest(target) ? leasebackOffer(target, "short") : "",
+    leaseback_terms: "",
     deposit_recommendation: depositRec(target, counterPrice, "firm"),
     supporting_document_requests: docRequests(target, "verify"),
     rationale: priceRationale(target, counterPrice, score, isCash),
@@ -241,7 +241,7 @@ function buildMaximizeCertainty(ctx: BuildContext, target?: Offer): CounterStrat
     close_timeline: `${target.closeDays || 30} days`,
     close_days: target.closeDays || 30,
     contingency_changes: contingencyChanges,
-    leaseback_terms: hasLeasebackRequest(target) ? leasebackOffer(target, "extended") : "",
+    leaseback_terms: "",
     deposit_recommendation: depositRec(target, counterPrice, "moderate"),
     supporting_document_requests: docRequests(target, "minimal"),
     rationale: certaintyRationale(target, counterPrice, score, isCash),
@@ -298,7 +298,7 @@ function buildBestBalance(ctx: BuildContext, target?: Offer): CounterStrategy | 
     close_timeline: `${target.closeDays || 30} days`,
     close_days: target.closeDays || 30,
     contingency_changes: contingencyChanges,
-    leaseback_terms: hasLeasebackRequest(target) ? leasebackOffer(target, "balanced") : "",
+    leaseback_terms: "",
     deposit_recommendation: depositRec(target, counterPrice, "balanced"),
     supporting_document_requests: docRequests(target, "balanced"),
     rationale: balanceRationale(target, counterPrice, score, isCash, ctx.priorities),
@@ -360,10 +360,7 @@ function docRequests(o: Offer, mode: "verify" | "minimal" | "balanced"): string[
 function priceRationale(o: Offer, counter: number, s: ScoredOffer | undefined, isCash: boolean): string {
   const motivation = isCash ? "all-cash buyer" : "well-qualified financed buyer";
   const conf = s ? `Close-probability score is ${s.closeProbability.score}/100 with financial confidence at ${s.financialConfidence.score}/100.` : "";
-  const closingClause = hasLeasebackRequest(o)
-    ? "The leaseback and timeline match what they asked for, so the only thing to negotiate back on is structure, not the price."
-    : "Match their requested timeline so the only thing left to negotiate is structure, not the price.";
-  return `${o.buyerName} came in at ${fmt(o.offerPrice)} as ${motivation}. ${conf} Counter at ${fmt(counter)} and pair the ask with a tight inspection window and as-is structure — every term protects the price you're holding. ${closingClause}`;
+  return `${o.buyerName} came in at ${fmt(o.offerPrice)} as ${motivation}. ${conf} Counter at ${fmt(counter)} and pair the ask with a tight inspection window and as-is structure — every term protects the price you're holding. Match their requested timeline so the only thing left to negotiate is structure, not the price.`;
 }
 
 function certaintyRationale(o: Offer, counter: number, s: ScoredOffer | undefined, isCash: boolean): string {
