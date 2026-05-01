@@ -347,7 +347,10 @@ function docRequests(o: Offer, mode: "verify" | "minimal" | "balanced"): string[
 function priceRationale(o: Offer, counter: number, s: ScoredOffer | undefined, isCash: boolean): string {
   const motivation = isCash ? "all-cash buyer" : "well-qualified financed buyer";
   const conf = s ? `Close-probability score is ${s.closeProbability.score}/100 with financial confidence at ${s.financialConfidence.score}/100.` : "";
-  return `${o.buyerName} came in at ${fmt(o.offerPrice)} as ${motivation}. ${conf} Counter at ${fmt(counter)} and pair the ask with a tight inspection window and as-is structure — every term protects the price you're holding. The leaseback and timeline match what they asked for, so the only thing to negotiate back on is structure, not the price.`;
+  const closingClause = hasLeasebackRequest(o)
+    ? "The leaseback and timeline match what they asked for, so the only thing to negotiate back on is structure, not the price."
+    : "Match their requested timeline so the only thing left to negotiate is structure, not the price.";
+  return `${o.buyerName} came in at ${fmt(o.offerPrice)} as ${motivation}. ${conf} Counter at ${fmt(counter)} and pair the ask with a tight inspection window and as-is structure — every term protects the price you're holding. ${closingClause}`;
 }
 
 function certaintyRationale(o: Offer, counter: number, s: ScoredOffer | undefined, isCash: boolean): string {
@@ -378,9 +381,39 @@ export interface CounterStrategyBundle {
 
 export function generateCounterStrategies(ctx: BuildContext): CounterStrategyBundle {
   const out: CounterStrategy[] = [];
-  const a = buildMaximizePrice(ctx);
-  const b = buildMaximizeCertainty(ctx);
-  const c = buildBestBalance(ctx);
+
+  // Rank offers by each lens.
+  const byPrice = sortedBy(ctx.offers, priceScore);
+  const byCertainty = sortedBy(ctx.offers, (o) => certaintyScore(o, ctx.scores[o.id]));
+  const byBalance = sortedBy(ctx.offers, (o) => balanceScore(o, ctx.scores[o.id], ctx.priorities));
+
+  // Greedy distinct assignment when there are enough offers.
+  const used = new Set<string>();
+  const pickDistinct = (ranked: Offer[]): Offer | undefined => {
+    if (ctx.offers.length <= 1) return ranked[0];
+    const fresh = ranked.find((o) => !used.has(o.id));
+    return fresh ?? ranked[0];
+  };
+
+  const priceTarget = pickDistinct(byPrice);
+  if (priceTarget) used.add(priceTarget.id);
+
+  const certaintyTarget = pickDistinct(byCertainty);
+  if (certaintyTarget) used.add(certaintyTarget.id);
+
+  // For balance: with 2 offers, prefer reusing the price target's offer (so we get
+  // 2 distinct buyers across the 3 strategies, not 3 separate); with 3+ offers,
+  // pick a fresh one if available.
+  let balanceTarget: Offer | undefined;
+  if (ctx.offers.length >= 3) {
+    balanceTarget = pickDistinct(byBalance);
+  } else {
+    balanceTarget = byBalance[0];
+  }
+
+  const a = buildMaximizePrice(ctx, priceTarget);
+  const b = buildMaximizeCertainty(ctx, certaintyTarget);
+  const c = buildBestBalance(ctx, balanceTarget);
   if (a) out.push(a);
   if (b) out.push(b);
   if (c) out.push(c);
