@@ -1,44 +1,41 @@
-## Goal
+# Fix Counter Strategy: leaseback noise + duplicate targets
 
-Add an inline-editable **Listing price** next to the listing name in the Offer Intake header. Edits write straight to `properties.listing_price` for the currently active deal.
+Two real bugs on `/counter-strategy`:
 
-## Why this is small
+1. **Leaseback is mentioned even when no buyer asked for one.** The engine always emits a `leaseback_terms` string ("7-day rent-free leaseback", etc.) and the detail view always renders a "Leaseback" field. If `leasebackRequest` is empty/None on every offer, this is noise — and worse, it suggests the seller is offering something they shouldn't volunteer.
 
-The whole downstream stack already reads `properties.listing_price`:
+2. **Only one offer ends up countered.** `buildMaximizePrice`, `buildMaximizeCertainty`, and `buildBestBalance` each independently pick the "best" offer for their lens. With a small package (2 offers), the same offer often wins all three lenses, so the user sees three strategies aimed at the same buyer. The intent of the page is one strategy per offer angle.
 
-- **Comparison** page — already shows "Listed at $X" and per-offer price delta (`Comparison.tsx:270`, `:343`).
-- **AI Strategist** (`compare-offers` edge function) — already receives `property.listingPrice` in its prompt (`index.ts:35`).
-- **Shared portal** — `portalService.ts` already reads `listing_price` and propagates it.
-- **Counter Strategy / Leverage / Recommendation / Seller Report** engines all consume `listingPrice`.
+## Changes
 
-So once the value is editable on Intake and saved to the database, *all of the above* are already covered. No other UI changes are needed for this request.
+### 1. `src/lib/counterStrategyEngine.ts` — leaseback only when relevant
 
-## What I'll change
+- Add a helper `anyLeasebackRequested(offers)` and a per-offer `hasLeasebackRequest(o)` that treat empty / `"None"` / `"none"` / null as "not requested".
+- In each builder (`buildMaximizePrice`, `buildMaximizeCertainty`, `buildBestBalance`):
+  - Only set `leaseback_terms` when the **target offer** actually requested a leaseback. Otherwise leave it as empty string `""`.
+  - Drop leaseback language from the rationale strings when not relevant.
+- Keep `leasebackOffer()` for the case where it IS requested (honor / counter-shorten / split posture).
 
-### 1. `src/pages/OfferIntake.tsx` — header edit UI
-- Track `listingPrice` in component state (alongside `analysisLabel`), seeded from the loaded analysis.
-- Replace the right-hand "Uploading into" block with two stacked rows:
-  - Listing name (existing)
-  - **Listed at $X,XXX,XXX** with a pencil icon → click swaps it for an inline number input, blur/Enter saves, Esc cancels.
-- On save: optimistic UI update + toast on error (rollback). Validate as a positive integer ≤ $999,999,999.
-- Refresh the in-memory `analysisOptions` entry too so the picker stays accurate.
+### 2. `src/lib/counterStrategyEngine.ts` — distinct targets across strategies
 
-### 2. `src/lib/dealsDashboardService.ts` (or a new tiny helper in `offerService.ts`)
-- Add `updatePropertyListingPrice(userId, propertyId, price)` — single `UPDATE properties SET listing_price = $1 WHERE id = $2 AND user_id = $3`. RLS already enforces ownership, but the explicit `user_id` filter is belt-and-suspenders.
+Replace the three independent `best(...)` picks with a **single assignment pass** so each strategy targets a different offer when there are enough offers:
 
-### 3. `src/lib/activeAnalysis.ts` — lookup helper
-- Make `fetchAnalysisById` return the `property_id` (it likely already does via `properties(*)`; just need to expose it). Used so the intake page knows which property row to update.
+- Rank offers by each lens (price, certainty, balance) into ordered lists.
+- Greedy assignment: pick "Maximize Price" first (top of price list), then "Maximize Certainty" from certainty list excluding already-used offers, then "Best Balance" from balance list excluding already-used.
+- Fallback: if there are fewer offers than strategies (e.g., 1 or 2 offers), allow reuse but mark duplicates clearly — when only 1 offer exists, still produce 3 strategies on that offer (current behavior); when 2 offers exist, ensure at least 2 distinct targets are used across the 3 strategies (no offer countered three times).
 
-## What I'm explicitly NOT doing (because already done)
+### 3. `src/pages/CounterStrategy.tsx` — hide empty leaseback field
 
-- Showing "% of ask" on Comparison cards → already shown as price delta.
-- Passing listing price to AI Strategist → already passed.
-- Showing in shared portal → already shown.
+In `StrategyDetail`'s Counter Terms grid, only render the `Leaseback` `<Field>` when `strategy.leaseback_terms` is a non-empty string. No other UI changes.
 
-If you'd rather see "% of ask" as a separate badge on Comparison cards (e.g. `+2.3% over ask`), say the word and I'll add that as a follow-up — but it's a separate visual tweak, not a wiring change.
+## Out of scope
 
-## Validation
+- No DB schema changes.
+- No edge function changes.
+- No changes to scoring / leverage engines.
 
-- Number input: digits only, max 9 digits, no negatives.
-- Empty → treated as "clear" (sets to NULL, downstream code already handles null).
-- Optimistic update reverts on Supabase error with a toast.
+## Technical notes
+
+- `Offer.leasebackRequest` is a free-text string ("None", "30 days post-close", etc.). The "not requested" check is: `!s || s.trim() === "" || s.trim().toLowerCase() === "none"`.
+- Strategy ordering in the UI is driven by the array order returned from `generateCounterStrategies`; assignment pass preserves the existing `[price, certainty, balance]` order.
+- `recommended: true` stays on `best_balance`.

@@ -108,10 +108,18 @@ const defaultWeights = (): SellerPriorityWeights => ({
 const best = <T,>(items: T[], by: (t: T) => number): T | undefined =>
   items.length ? items.reduce((a, b) => (by(b) > by(a) ? b : a)) : undefined;
 
+const sortedBy = <T,>(items: T[], by: (t: T) => number): T[] =>
+  [...items].sort((a, b) => by(b) - by(a));
+
+const hasLeasebackRequest = (o: Offer): boolean => {
+  const s = (o.leasebackRequest ?? "").trim().toLowerCase();
+  return s.length > 0 && s !== "none" && s !== "n/a" && s !== "no";
+};
+
 /* ── Strategy builders ── */
 
-function buildMaximizePrice(ctx: BuildContext): CounterStrategy | null {
-  const target = best(ctx.offers, priceScore);
+function buildMaximizePrice(ctx: BuildContext, target?: Offer): CounterStrategy | null {
+  target = target ?? best(ctx.offers, priceScore);
   if (!target) return null;
   const score = ctx.scores[target.id];
   const counterPrice = round(Math.max(target.offerPrice * 1.005, target.offerPrice + 25_000), 5_000);
@@ -168,7 +176,7 @@ function buildMaximizePrice(ctx: BuildContext): CounterStrategy | null {
     close_timeline: `${target.closeDays || 30} days`,
     close_days: target.closeDays || 30,
     contingency_changes: contingencyChanges,
-    leaseback_terms: leasebackOffer(target, "short"),
+    leaseback_terms: hasLeasebackRequest(target) ? leasebackOffer(target, "short") : "",
     deposit_recommendation: depositRec(target, counterPrice, "firm"),
     supporting_document_requests: docRequests(target, "verify"),
     rationale: priceRationale(target, counterPrice, score, isCash),
@@ -181,8 +189,8 @@ function buildMaximizePrice(ctx: BuildContext): CounterStrategy | null {
   };
 }
 
-function buildMaximizeCertainty(ctx: BuildContext): CounterStrategy | null {
-  const target = best(ctx.offers, (o) => certaintyScore(o, ctx.scores[o.id]));
+function buildMaximizeCertainty(ctx: BuildContext, target?: Offer): CounterStrategy | null {
+  target = target ?? best(ctx.offers, (o) => certaintyScore(o, ctx.scores[o.id]));
   if (!target) return null;
   const score = ctx.scores[target.id];
   // Hold close to their offer; the play is structure, not price.
@@ -222,7 +230,7 @@ function buildMaximizeCertainty(ctx: BuildContext): CounterStrategy | null {
     close_timeline: `${target.closeDays || 30} days`,
     close_days: target.closeDays || 30,
     contingency_changes: contingencyChanges,
-    leaseback_terms: leasebackOffer(target, "extended"),
+    leaseback_terms: hasLeasebackRequest(target) ? leasebackOffer(target, "extended") : "",
     deposit_recommendation: depositRec(target, counterPrice, "moderate"),
     supporting_document_requests: docRequests(target, "minimal"),
     rationale: certaintyRationale(target, counterPrice, score, isCash),
@@ -236,8 +244,8 @@ function buildMaximizeCertainty(ctx: BuildContext): CounterStrategy | null {
   };
 }
 
-function buildBestBalance(ctx: BuildContext): CounterStrategy | null {
-  const target = best(ctx.offers, (o) => balanceScore(o, ctx.scores[o.id], ctx.priorities));
+function buildBestBalance(ctx: BuildContext, target?: Offer): CounterStrategy | null {
+  target = target ?? best(ctx.offers, (o) => balanceScore(o, ctx.scores[o.id], ctx.priorities));
   if (!target) return null;
   const score = ctx.scores[target.id];
   // Modest bump on price + tightened structure.
@@ -277,7 +285,7 @@ function buildBestBalance(ctx: BuildContext): CounterStrategy | null {
     close_timeline: `${target.closeDays || 30} days`,
     close_days: target.closeDays || 30,
     contingency_changes: contingencyChanges,
-    leaseback_terms: leasebackOffer(target, "balanced"),
+    leaseback_terms: hasLeasebackRequest(target) ? leasebackOffer(target, "balanced") : "",
     deposit_recommendation: depositRec(target, counterPrice, "balanced"),
     supporting_document_requests: docRequests(target, "balanced"),
     rationale: balanceRationale(target, counterPrice, score, isCash, ctx.priorities),
@@ -339,7 +347,10 @@ function docRequests(o: Offer, mode: "verify" | "minimal" | "balanced"): string[
 function priceRationale(o: Offer, counter: number, s: ScoredOffer | undefined, isCash: boolean): string {
   const motivation = isCash ? "all-cash buyer" : "well-qualified financed buyer";
   const conf = s ? `Close-probability score is ${s.closeProbability.score}/100 with financial confidence at ${s.financialConfidence.score}/100.` : "";
-  return `${o.buyerName} came in at ${fmt(o.offerPrice)} as ${motivation}. ${conf} Counter at ${fmt(counter)} and pair the ask with a tight inspection window and as-is structure — every term protects the price you're holding. The leaseback and timeline match what they asked for, so the only thing to negotiate back on is structure, not the price.`;
+  const closingClause = hasLeasebackRequest(o)
+    ? "The leaseback and timeline match what they asked for, so the only thing to negotiate back on is structure, not the price."
+    : "Match their requested timeline so the only thing left to negotiate is structure, not the price.";
+  return `${o.buyerName} came in at ${fmt(o.offerPrice)} as ${motivation}. ${conf} Counter at ${fmt(counter)} and pair the ask with a tight inspection window and as-is structure — every term protects the price you're holding. ${closingClause}`;
 }
 
 function certaintyRationale(o: Offer, counter: number, s: ScoredOffer | undefined, isCash: boolean): string {
@@ -370,9 +381,39 @@ export interface CounterStrategyBundle {
 
 export function generateCounterStrategies(ctx: BuildContext): CounterStrategyBundle {
   const out: CounterStrategy[] = [];
-  const a = buildMaximizePrice(ctx);
-  const b = buildMaximizeCertainty(ctx);
-  const c = buildBestBalance(ctx);
+
+  // Rank offers by each lens.
+  const byPrice = sortedBy(ctx.offers, priceScore);
+  const byCertainty = sortedBy(ctx.offers, (o) => certaintyScore(o, ctx.scores[o.id]));
+  const byBalance = sortedBy(ctx.offers, (o) => balanceScore(o, ctx.scores[o.id], ctx.priorities));
+
+  // Greedy distinct assignment when there are enough offers.
+  const used = new Set<string>();
+  const pickDistinct = (ranked: Offer[]): Offer | undefined => {
+    if (ctx.offers.length <= 1) return ranked[0];
+    const fresh = ranked.find((o) => !used.has(o.id));
+    return fresh ?? ranked[0];
+  };
+
+  const priceTarget = pickDistinct(byPrice);
+  if (priceTarget) used.add(priceTarget.id);
+
+  const certaintyTarget = pickDistinct(byCertainty);
+  if (certaintyTarget) used.add(certaintyTarget.id);
+
+  // For balance: with 2 offers, prefer reusing the price target's offer (so we get
+  // 2 distinct buyers across the 3 strategies, not 3 separate); with 3+ offers,
+  // pick a fresh one if available.
+  let balanceTarget: Offer | undefined;
+  if (ctx.offers.length >= 3) {
+    balanceTarget = pickDistinct(byBalance);
+  } else {
+    balanceTarget = byBalance[0];
+  }
+
+  const a = buildMaximizePrice(ctx, priceTarget);
+  const b = buildMaximizeCertainty(ctx, certaintyTarget);
+  const c = buildBestBalance(ctx, balanceTarget);
   if (a) out.push(a);
   if (b) out.push(b);
   if (c) out.push(c);
