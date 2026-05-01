@@ -116,13 +116,22 @@ const hasLeasebackRequest = (o: Offer): boolean => {
   return s.length > 0 && s !== "none" && s !== "n/a" && s !== "no";
 };
 
+/** Highest competing offer price (excluding the target). */
+const competingHighPrice = (offers: Offer[], targetId: string): number => {
+  const others = offers.filter((o) => o.id !== targetId && o.offerPrice > 0);
+  return others.length ? Math.max(...others.map((o) => o.offerPrice)) : 0;
+};
+
 /* ── Strategy builders ── */
 
 function buildMaximizePrice(ctx: BuildContext, target?: Offer): CounterStrategy | null {
   target = target ?? best(ctx.offers, priceScore);
   if (!target) return null;
   const score = ctx.scores[target.id];
-  const counterPrice = round(Math.max(target.offerPrice * 1.005, target.offerPrice + 25_000), 5_000);
+  // Price floor: at minimum, lift to the highest competing offer; otherwise nudge above their own.
+  const competing = competingHighPrice(ctx.offers, target.id);
+  const lifted = Math.max(target.offerPrice, competing);
+  const counterPrice = round(Math.max(lifted * 1.005, lifted + 25_000), 5_000);
   const isCash = (target.financingType || "").toLowerCase().includes("cash");
   const lev = ctx.leverage.filter((l) => l.offer_id === target.id);
 
@@ -193,8 +202,10 @@ function buildMaximizeCertainty(ctx: BuildContext, target?: Offer): CounterStrat
   target = target ?? best(ctx.offers, (o) => certaintyScore(o, ctx.scores[o.id]));
   if (!target) return null;
   const score = ctx.scores[target.id];
-  // Hold close to their offer; the play is structure, not price.
-  const counterPrice = round(Math.max(target.offerPrice, target.offerPrice * 0.998), 5_000);
+  // Certainty play: hold close to their offer, BUT if a competing offer is higher,
+  // counter up to match it — they're the best buyer and now they know the field.
+  const competing = competingHighPrice(ctx.offers, target.id);
+  const counterPrice = round(Math.max(target.offerPrice, competing), 5_000);
   const isCash = (target.financingType || "").toLowerCase().includes("cash");
   const lev = ctx.leverage.filter((l) => l.offer_id === target.id);
 
@@ -248,8 +259,10 @@ function buildBestBalance(ctx: BuildContext, target?: Offer): CounterStrategy | 
   target = target ?? best(ctx.offers, (o) => balanceScore(o, ctx.scores[o.id], ctx.priorities));
   if (!target) return null;
   const score = ctx.scores[target.id];
-  // Modest bump on price + tightened structure.
-  const counterPrice = round(target.offerPrice * 1.015, 5_000);
+  // Balance play: modest bump above the higher of (their offer) or (best competing offer).
+  const competing = competingHighPrice(ctx.offers, target.id);
+  const anchor = Math.max(target.offerPrice, competing);
+  const counterPrice = round(anchor * 1.015, 5_000);
   const isCash = (target.financingType || "").toLowerCase().includes("cash");
   const lev = ctx.leverage.filter((l) => l.offer_id === target.id);
 
