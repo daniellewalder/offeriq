@@ -317,7 +317,23 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const body = await req.json();
+    const contentType = req.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) {
+      return new Response(
+        JSON.stringify({ error: `Expected application/json, got "${contentType}"` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    const rawBody = await req.text();
+    let body: any;
+    try {
+      body = JSON.parse(rawBody);
+    } catch (e: any) {
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON body", detail: e?.message ?? String(e) }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     const { offer_id, offer_name, documents } = body as {
       offer_id: string;
       offer_name: string;

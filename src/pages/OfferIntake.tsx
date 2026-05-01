@@ -37,7 +37,6 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import OfferUploader from '@/components/OfferUploader';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -836,13 +835,6 @@ export default function OfferIntake() {
             </button>
           </div>
         </div>
-
-        {/* Claude-powered uploader (parallel extraction) */}
-        <OfferUploader
-          onComplete={(offers) => {
-            console.log('[OfferUploader] extracted offers:', offers);
-          }}
-        />
 
         {/* Unassigned tray */}
         <PackageBin
