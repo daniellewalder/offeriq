@@ -397,7 +397,9 @@ function StrategyDetail({ strategy }: { strategy: CounterStrategy }) {
           <Field label="Counter Price" value={formatCurrency(strategy.counter_price)} sub={strategy.counter_price_delta} />
           <Field label="Close Timeline" value={strategy.close_timeline} />
           <Field label="Earnest Money" value={strategy.deposit_recommendation} />
-          <Field label="Leaseback" value={strategy.leaseback_terms} />
+          {strategy.leaseback_terms && strategy.leaseback_terms.trim() !== "" && (
+            <Field label="Leaseback" value={strategy.leaseback_terms} />
+          )}
         </div>
       </div>
 
