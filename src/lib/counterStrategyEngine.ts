@@ -108,10 +108,18 @@ const defaultWeights = (): SellerPriorityWeights => ({
 const best = <T,>(items: T[], by: (t: T) => number): T | undefined =>
   items.length ? items.reduce((a, b) => (by(b) > by(a) ? b : a)) : undefined;
 
+const sortedBy = <T,>(items: T[], by: (t: T) => number): T[] =>
+  [...items].sort((a, b) => by(b) - by(a));
+
+const hasLeasebackRequest = (o: Offer): boolean => {
+  const s = (o.leasebackRequest ?? "").trim().toLowerCase();
+  return s.length > 0 && s !== "none" && s !== "n/a" && s !== "no";
+};
+
 /* ── Strategy builders ── */
 
-function buildMaximizePrice(ctx: BuildContext): CounterStrategy | null {
-  const target = best(ctx.offers, priceScore);
+function buildMaximizePrice(ctx: BuildContext, target?: Offer): CounterStrategy | null {
+  target = target ?? best(ctx.offers, priceScore);
   if (!target) return null;
   const score = ctx.scores[target.id];
   const counterPrice = round(Math.max(target.offerPrice * 1.005, target.offerPrice + 25_000), 5_000);
@@ -168,7 +176,7 @@ function buildMaximizePrice(ctx: BuildContext): CounterStrategy | null {
     close_timeline: `${target.closeDays || 30} days`,
     close_days: target.closeDays || 30,
     contingency_changes: contingencyChanges,
-    leaseback_terms: leasebackOffer(target, "short"),
+    leaseback_terms: hasLeasebackRequest(target) ? leasebackOffer(target, "short") : "",
     deposit_recommendation: depositRec(target, counterPrice, "firm"),
     supporting_document_requests: docRequests(target, "verify"),
     rationale: priceRationale(target, counterPrice, score, isCash),
@@ -181,8 +189,8 @@ function buildMaximizePrice(ctx: BuildContext): CounterStrategy | null {
   };
 }
 
-function buildMaximizeCertainty(ctx: BuildContext): CounterStrategy | null {
-  const target = best(ctx.offers, (o) => certaintyScore(o, ctx.scores[o.id]));
+function buildMaximizeCertainty(ctx: BuildContext, target?: Offer): CounterStrategy | null {
+  target = target ?? best(ctx.offers, (o) => certaintyScore(o, ctx.scores[o.id]));
   if (!target) return null;
   const score = ctx.scores[target.id];
   // Hold close to their offer; the play is structure, not price.
@@ -222,7 +230,7 @@ function buildMaximizeCertainty(ctx: BuildContext): CounterStrategy | null {
     close_timeline: `${target.closeDays || 30} days`,
     close_days: target.closeDays || 30,
     contingency_changes: contingencyChanges,
-    leaseback_terms: leasebackOffer(target, "extended"),
+    leaseback_terms: hasLeasebackRequest(target) ? leasebackOffer(target, "extended") : "",
     deposit_recommendation: depositRec(target, counterPrice, "moderate"),
     supporting_document_requests: docRequests(target, "minimal"),
     rationale: certaintyRationale(target, counterPrice, score, isCash),
@@ -236,8 +244,8 @@ function buildMaximizeCertainty(ctx: BuildContext): CounterStrategy | null {
   };
 }
 
-function buildBestBalance(ctx: BuildContext): CounterStrategy | null {
-  const target = best(ctx.offers, (o) => balanceScore(o, ctx.scores[o.id], ctx.priorities));
+function buildBestBalance(ctx: BuildContext, target?: Offer): CounterStrategy | null {
+  target = target ?? best(ctx.offers, (o) => balanceScore(o, ctx.scores[o.id], ctx.priorities));
   if (!target) return null;
   const score = ctx.scores[target.id];
   // Modest bump on price + tightened structure.
@@ -277,7 +285,7 @@ function buildBestBalance(ctx: BuildContext): CounterStrategy | null {
     close_timeline: `${target.closeDays || 30} days`,
     close_days: target.closeDays || 30,
     contingency_changes: contingencyChanges,
-    leaseback_terms: leasebackOffer(target, "balanced"),
+    leaseback_terms: hasLeasebackRequest(target) ? leasebackOffer(target, "balanced") : "",
     deposit_recommendation: depositRec(target, counterPrice, "balanced"),
     supporting_document_requests: docRequests(target, "balanced"),
     rationale: balanceRationale(target, counterPrice, score, isCash, ctx.priorities),
