@@ -368,7 +368,11 @@ function priceRationale(o: Offer, counter: number, s: ScoredOffer | undefined, i
 
 function certaintyRationale(o: Offer, counter: number, s: ScoredOffer | undefined, isCash: boolean): string {
   const completeness = s ? `Package completeness scored ${s.packageCompleteness.score}/100.` : "";
-  return `${o.buyerName} is the most reliable path to close in the package. ${completeness} The play here is structure, not price — hold close to their offer at ${fmt(counter)}, accept their timeline, and add only the protections that matter (${isCash ? "verified funds" : "appraisal gap coverage"} and a defined repair credit). You give up some upside versus the highest-priced path, but you remove almost every reason this deal would fall apart.`;
+  const lifted = counter > o.offerPrice + 1000;
+  const priceClause = lifted
+    ? `Counter at ${fmt(counter)} — matching the highest competing offer on the table. They're the strongest path to close, so put them on equal price footing and let their better terms win the deal.`
+    : `Hold close to their offer at ${fmt(counter)} — the play here is structure, not price.`;
+  return `${o.buyerName} is the most reliable path to close in the package. ${completeness} ${priceClause} Accept their timeline and add only the protections that matter (${isCash ? "verified funds" : "appraisal gap coverage"} and a defined repair credit).`;
 }
 
 function balanceRationale(o: Offer, counter: number, s: ScoredOffer | undefined, isCash: boolean, w?: SellerPriorityWeights | null): string {
